@@ -46,7 +46,7 @@ export function loadSettings(serverConfig) {
     const cloudStt = serverConfig?.stt?.ready;
     // Whisper è preferito ovunque sia disponibile: niente "beep" di sistema di
     // Android a ogni riavvio del riconoscitore e lingua rilevata in automatico.
-    if (cloudStt || !webSpeechSupported()) s.sttEngine = cloudStt ? 'cloud' : s.sttEngine;
+    if (cloudStt) s.sttEngine = 'cloud';
     if (serverConfig?.tts?.ready && isIOS) s.ttsEngine = 'cloud';
     const nav = (navigator.language || 'it-IT');
     if (!nav.toLowerCase().startsWith('it')) {
