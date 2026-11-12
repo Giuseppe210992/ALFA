@@ -24,6 +24,14 @@ npm test                  # 22 test (segmentatore, splitter, VAD, WAV, server)
 
 Senza chiavi API l'app funziona subito: usa **MyMemory** (traduzione gratuita) e i motori vocali del browser.
 
+### Pubblicarla online gratis (Render, consigliato)
+
+1. Vai su [render.com](https://render.com) ed entra con il tuo account GitHub.
+2. **New → Blueprint** → scegli il repository `alfa` (il file `render.yaml` configura tutto).
+3. Dopo 1-2 minuti ottieni un indirizzo tipo `https://alfa-translator.onrender.com`: aprilo dal telefono e installalo.
+
+Il piano gratuito "si addormenta" dopo 15 minuti di inattività: la prima apertura successiva impiega ~50 secondi.
+
 ### Provarla sul telefono
 
 Il microfono richiede **HTTPS** (fa eccezione `localhost`). Hai tre possibilità:

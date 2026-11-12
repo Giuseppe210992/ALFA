@@ -1,0 +1,22 @@
+# Blueprint Render: deploy gratuito con HTTPS automatico (necessario per il microfono).
+# Render → New → Blueprint → seleziona questo repository.
+services:
+  - type: web
+    name: alfa-translator
+    runtime: node
+    plan: free
+    buildCommand: echo "Nessuna build necessaria"
+    startCommand: node server/index.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: TRANSLATE_PROVIDER
+        value: mymemory
+      # Facoltative: compilale dalla dashboard Render (Environment) quando vuoi
+      # qualità superiore, Whisper per iPhone o voci neurali.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: APP_ACCESS_TOKEN
+        sync: false
