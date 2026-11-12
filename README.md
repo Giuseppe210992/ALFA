@@ -24,7 +24,20 @@ npm test                  # 22 test (segmentatore, splitter, VAD, WAV, server)
 
 Senza chiavi API l'app funziona subito: usa **MyMemory** (traduzione gratuita) e i motori vocali del browser.
 
-### Pubblicarla online gratis (Render, consigliato)
+### Sul tuo server (Oracle Cloud Free Tier o altro VPS) con il tuo dominio
+
+```bash
+# sul server, via SSH (Ubuntu: apt, Oracle Linux: dnf)
+sudo apt install -y git        # oppure: sudo dnf install -y git
+git clone -b ccr-05f08d52-6objp2 https://github.com/Giuseppe210992/ALFA.git alfa
+cd alfa
+sudo bash deploy/oracle-setup.sh traduttore.tuodominio.it
+```
+Lo script installa Node.js 22, il servizio `alfa` (avvio automatico), Caddy con HTTPS automatico e apre le
+porte 80/443 nel firewall del sistema. Su Oracle va aperta anche la **Security List** (porte 80 e 443) e su
+register.it serve un **record A** verso l'IP pubblico del server. Aggiornamenti: `bash deploy/update.sh`.
+
+### Pubblicarla online gratis (Render)
 
 1. Vai su [render.com](https://render.com) ed entra con il tuo account GitHub.
 2. **New → Blueprint** → scegli il repository `alfa` (il file `render.yaml` configura tutto).
