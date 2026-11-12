@@ -33,9 +33,22 @@ git clone -b ccr-05f08d52-6objp2 https://github.com/Giuseppe210992/ALFA.git alfa
 cd alfa
 sudo bash deploy/oracle-setup.sh traduttore.tuodominio.it
 ```
-Lo script installa Node.js 22, il servizio `alfa` (avvio automatico), Caddy con HTTPS automatico e apre le
-porte 80/443 nel firewall del sistema. Su Oracle va aperta anche la **Security List** (porte 80 e 443) e su
-register.it serve un **record A** verso l'IP pubblico del server. Aggiornamenti: `bash deploy/update.sh`.
+Lo script è pensato per server **già in uso** da altre app e non tocca nulla di esistente:
+- usa un Node.js 22 privato in `/opt/alfa-node`;
+- sceglie da solo una porta interna libera (da 3080 in su);
+- se trova Caddy o nginx su 80/443 aggiunge solo la configurazione del dominio di ALFA, con validazione e backup;
+- se le porte 80/443 sono libere installa Caddy;
+- se trova Docker/Traefik non modifica nulla e stampa le istruzioni.
+
+Su register.it serve un **record A** verso l'IP pubblico del server. Aggiornamenti: `bash deploy/update.sh`.
+
+**Traduzione gratuita con FreeLLMAPI** (router compatibile OpenAI) nel file `.env`:
+```
+TRANSLATE_PROVIDER=openai
+LLM_BASE_URL=https://ai.tuodominio.it/v1
+LLM_API_KEY=la-tua-chiave-freellmapi
+LLM_MODEL=gemini-3.1-flash-lite
+```
 
 ### Pubblicarla online gratis (Render)
 

@@ -108,6 +108,53 @@ export function createTagParser(onTag, onText) {
   };
 }
 
+/**
+ * Rimuove i blocchi di ragionamento <think>…</think> che alcuni modelli
+ * (Qwen, DeepSeek, GLM… spesso scelti dai router come FreeLLMAPI con "auto")
+ * inseriscono nel testo: altrimenti verrebbero letti ad alta voce.
+ */
+export function createThinkFilter(onText) {
+  const OPEN = '<think>';
+  const CLOSE = '</think>';
+  let buf = '';
+  let inThink = false;
+  // Lunghezza del suffisso di `buf` che potrebbe essere l'inizio di `tag`
+  const partial = (tag) => {
+    for (let n = Math.min(tag.length - 1, buf.length); n > 0; n--) {
+      if (tag.startsWith(buf.slice(-n))) return n;
+    }
+    return 0;
+  };
+  return {
+    push(chunk) {
+      buf += chunk;
+      for (;;) {
+        if (inThink) {
+          const i = buf.indexOf(CLOSE);
+          if (i === -1) { buf = buf.slice(buf.length - partial(CLOSE)); return; }
+          buf = buf.slice(i + CLOSE.length);
+          inThink = false;
+        } else {
+          const i = buf.indexOf(OPEN);
+          if (i === -1) {
+            const keep = partial(OPEN);
+            if (buf.length > keep) onText(buf.slice(0, buf.length - keep));
+            buf = buf.slice(buf.length - keep);
+            return;
+          }
+          if (i > 0) onText(buf.slice(0, i));
+          buf = buf.slice(i + OPEN.length);
+          inThink = true;
+        }
+      }
+    },
+    flush() {
+      if (!inThink && buf) onText(buf);
+      buf = '';
+    },
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider
 // ─────────────────────────────────────────────────────────────────────────────
@@ -131,13 +178,16 @@ async function openaiStream(opts, prompt, onChunk) {
     }),
   });
   if (!res.ok) throw await upstreamError(res, 'LLM');
+  const think = createThinkFilter(onChunk);
   for await (const { data } of iterateSse(res)) {
     if (data === '[DONE]') break;
+    let delta;
     try {
-      const delta = JSON.parse(data).choices?.[0]?.delta?.content;
-      if (delta) onChunk(delta);
-    } catch { /* riga keep-alive o non JSON */ }
+      delta = JSON.parse(data).choices?.[0]?.delta?.content;
+    } catch { continue; /* riga keep-alive o non JSON */ }
+    if (delta) think.push(delta);
   }
+  think.flush();
 }
 
 async function anthropicStream(opts, prompt, onChunk) {

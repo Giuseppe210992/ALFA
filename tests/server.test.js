@@ -9,7 +9,7 @@ process.env.OPENAI_API_KEY = '';
 process.env.APP_ACCESS_TOKEN = '';
 
 const { createServer } = await import('../server/index.js');
-const { createTagParser, buildPrompt } = await import('../server/providers/translate.js');
+const { createTagParser, createThinkFilter, buildPrompt } = await import('../server/providers/translate.js');
 const { parseEnv } = await import('../server/config.js');
 const { isHallucination } = await import('../server/providers/speech.js');
 
@@ -108,4 +108,12 @@ test('parseEnv e filtro allucinazioni Whisper', () => {
   assert.deepEqual(parseEnv('A=1\n# c\nB="x y"\nC=z # comm'), { A: '1', B: 'x y', C: 'z' });
   assert.ok(isHallucination('Thank you for watching!'));
   assert.ok(!isHallucination('Thank you for the coffee'));
+});
+
+test('filtro <think>: rimuove il ragionamento anche spezzato tra chunk', () => {
+  let out = '';
+  const f = createThinkFilter((s) => { out += s; });
+  for (const c of ['<thi', 'nk>devo tradurre', '...</th', 'ink>[[en]] Ciao', ' a <b>tutti</b>']) f.push(c);
+  f.flush();
+  assert.equal(out, '[[en]] Ciao a <b>tutti</b>');
 });
