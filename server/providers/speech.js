@@ -26,14 +26,8 @@ export function isHallucination(text) {
   return HALLUCINATIONS.some((re) => re.test(t));
 }
 
-/**
- * Trascrive un segmento audio.
- * @param {Buffer} audio      contenuto del file (WAV 16 kHz mono dal client)
- * @param {string} mime       content-type
- * @param {string[]} langs    lingue candidate (es. ["en-US","it-IT"]); con una sola lingua la forziamo
- */
-export async function transcribe({ audio, mime, langs = [], signal }) {
-  if (!sttReady()) throw new HttpError(503, 'STT cloud non configurato (STT_API_KEY mancante)');
+/** Una singola chiamata a /audio/transcriptions. */
+async function transcribeOnce({ audio, mime, language, prompt, signal }) {
   const { baseUrl, apiKey, model } = config.stt;
   const ext = mime.includes('wav') ? 'wav' : mime.includes('mp4') ? 'mp4' : mime.includes('ogg') ? 'ogg' : 'webm';
 
@@ -41,15 +35,12 @@ export async function transcribe({ audio, mime, langs = [], signal }) {
   form.append('file', new Blob([audio], { type: mime }), `speech.${ext}`);
   form.append('model', model);
   form.append('temperature', '0');
-  // whisper-1 e i modelli Whisper di Groq restituiscono la lingua con verbose_json;
-  // gpt-4o-transcribe supporta solo json (in quel caso la lingua non è rilevata).
+  // whisper-1 e i modelli Whisper di Groq restituiscono lingua e affidabilità
+  // con verbose_json; gpt-4o-transcribe supporta solo json.
   const verbose = !/gpt-4o/i.test(model);
   form.append('response_format', verbose ? 'verbose_json' : 'json');
-  if (langs.length === 1) form.append('language', baseLang(langs[0]));
-  if (langs.length > 1) {
-    // Un breve prompt con i nomi delle lingue aiuta il modello a restare tra le due.
-    form.append('prompt', `Conversation between ${langs.map(languageName).join(' and ')} speakers.`);
-  }
+  if (language) form.append('language', language);
+  if (prompt) form.append('prompt', prompt);
 
   const res = await fetch(`${baseUrl}/audio/transcriptions`, {
     method: 'POST',
@@ -59,20 +50,63 @@ export async function transcribe({ audio, mime, langs = [], signal }) {
   });
   if (!res.ok) throw await upstreamError(res, 'STT');
   const json = await res.json();
-  let text = String(json.text || '').trim();
 
-  // Scarta i segmenti in cui Whisper è poco sicuro che ci sia parlato.
+  let text = String(json.text || '').trim();
+  let score = null; // log-probabilità media: più è alta, più la trascrizione è affidabile
   if (Array.isArray(json.segments) && json.segments.length) {
-    const speech = json.segments.filter((s) => !(s.no_speech_prob > 0.75 && s.avg_logprob < -0.8));
+    // Scarta i segmenti in cui Whisper è poco sicuro che ci sia parlato.
+    const speech = json.segments.filter((s) => !(s.no_speech_prob > 0.6 && s.avg_logprob < -0.7));
     text = speech.map((s) => s.text).join('').trim();
+    if (speech.length) score = speech.reduce((n, s) => n + (s.avg_logprob ?? -1), 0) / speech.length;
   }
   if (isHallucination(text)) text = '';
-
   return {
     text,
-    language: normalizeDetected(json.language) || (langs.length === 1 ? baseLang(langs[0]) : ''),
+    language: language || normalizeDetected(json.language),
+    score,
     duration: json.duration ?? null,
   };
+}
+
+// Sotto questa affidabilità media la trascrizione forzata è considerata rumore.
+const MIN_FORCED_SCORE = -1.0;
+
+/**
+ * Trascrive un segmento audio restando DENTRO la coppia di lingue.
+ *
+ * Whisper rileva la lingua da solo, ma su frasi brevi o rumorose sbaglia
+ * (es. "¿Qué?" in spagnolo o frasi in islandese mentre si parla italiano).
+ * Se la lingua rilevata non è una delle due della conversazione, ritrascriviamo
+ * forzando ciascuna delle due lingue e teniamo il risultato più affidabile;
+ * se nessuno dei due è affidabile, il segmento è rumore e viene scartato.
+ *
+ * @param {Buffer} audio      contenuto del file (WAV 16 kHz mono dal client)
+ * @param {string} mime       content-type
+ * @param {string[]} langs    lingue della conversazione (es. ["en-US","it-IT"])
+ */
+export async function transcribe({ audio, mime, langs = [], signal }) {
+  if (!sttReady()) throw new HttpError(503, 'STT cloud non configurato (STT_API_KEY mancante)');
+  const codes = [...new Set(langs.map(baseLang))];
+
+  if (codes.length === 1) return transcribeOnce({ audio, mime, language: codes[0], signal });
+
+  const prompt = codes.length > 1
+    ? `Conversation between ${codes.map(languageName).join(' and ')} speakers.`
+    : '';
+  const first = await transcribeOnce({ audio, mime, prompt, signal });
+  if (!first.text || codes.length < 2 || codes.includes(first.language)) return first;
+
+  // Lingua fuori coppia: secondo passaggio forzato sulle due lingue.
+  const forced = await Promise.all(
+    codes.map((language) => transcribeOnce({ audio, mime, language, signal }).catch(() => null)),
+  );
+  const best = forced
+    .filter((r) => r && r.text && r.score !== null)
+    .sort((a, b) => b.score - a.score)[0];
+  if (!best || best.score < MIN_FORCED_SCORE) {
+    return { text: '', language: '', score: null, duration: first.duration, discarded: first.text };
+  }
+  return best;
 }
 
 /**
