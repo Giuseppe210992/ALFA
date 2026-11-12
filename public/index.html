@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ALFA Traduttore</title>
+  <meta name="description" content="Traduttore vocale bidirezionale in tempo reale, completamente hands-free.">
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="/icons/icon-192.png" sizes="192x192" type="image/png">
+
+  <!-- iOS: installazione come app a schermo intero -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ALFA">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+
+  <link rel="stylesheet" href="/css/styles.css">
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <div class="app">
+    <!-- ── Barra superiore: coppia di lingue ─────────────────────────────── -->
+    <header class="topbar">
+      <div class="brand" aria-hidden="true">
+        <img src="/icons/icon.svg" alt="" width="28" height="28">
+        <span>ALFA</span>
+      </div>
+      <div class="langs">
+        <label class="lang-pick">
+          <span class="lang-role">Interlocutore</span>
+          <select id="theirLang" aria-label="Lingua dell'interlocutore"></select>
+        </label>
+        <button id="swapBtn" class="icon-btn" type="button" aria-label="Inverti lingue" title="Inverti lingue">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M7 7h11l-3-3M17 17H6l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <label class="lang-pick">
+          <span class="lang-role">Tu</span>
+          <select id="myLang" aria-label="La tua lingua"></select>
+        </label>
+      </div>
+      <button id="settingsBtn" class="icon-btn" type="button" aria-label="Impostazioni" title="Impostazioni">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      </button>
+    </header>
+
+    <!-- Banner installazione PWA -->
+    <div id="installBanner" class="banner" hidden>
+      <span id="installText">Installa ALFA sulla schermata Home per usarla come un'app.</span>
+      <button id="installBtn" class="btn btn-small" type="button">Installa</button>
+      <button id="installClose" class="icon-btn" type="button" aria-label="Chiudi">✕</button>
+    </div>
+
+    <!-- Avvisi (errori, offline) -->
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+    <!-- ── Conversazione ────────────────────────────────────────────────── -->
+    <main id="conversation" class="conversation" aria-live="polite">
+      <section id="emptyState" class="empty">
+        <h1>Parla liberamente.</h1>
+        <p>Tocca <strong>Avvia</strong> una sola volta: da lì in poi ALFA ascolta di continuo,
+          traduce e legge ad alta voce in entrambe le direzioni, senza altri tocchi.</p>
+        <ol>
+          <li>Appoggia il telefono tra te e il tuo interlocutore.</li>
+          <li>Lui parla nella sua lingua → senti la traduzione nella tua.</li>
+          <li>Rispondi nella tua lingua → ALFA la legge a lui nella sua.</li>
+        </ol>
+        <p class="hint">Con gli auricolari attiva <em>Ascolto continuo</em> nelle impostazioni per non perdere nemmeno una parola.</p>
+      </section>
+    </main>
+
+    <!-- ── Barra inferiore: stato e avvio ───────────────────────────────── -->
+    <footer class="dock">
+      <div class="live">
+        <div class="listening-row">
+          <button id="listenChip" class="chip" type="button" hidden title="Tocca per cambiare lingua ascoltata"></button>
+          <span id="phaseText" class="phase">Pronto</span>
+        </div>
+        <p id="interim" class="interim" aria-live="off"></p>
+      </div>
+      <button id="startBtn" class="orb" type="button" data-phase="idle" aria-label="Avvia la conversazione">
+        <span class="orb-ring" aria-hidden="true"></span>
+        <span class="orb-label">Avvia</span>
+      </button>
+    </footer>
+  </div>
+
+  <!-- ── Impostazioni ─────────────────────────────────────────────────────── -->
+  <dialog id="settings" class="sheet">
+    <form method="dialog" id="settingsForm">
+      <header class="sheet-head">
+        <h2>Impostazioni</h2>
+        <button class="icon-btn" value="close" aria-label="Chiudi">✕</button>
+      </header>
+
+      <fieldset>
+        <legend>Riconoscimento vocale</legend>
+        <label class="field">
+          <span>Motore</span>
+          <select name="sttEngine">
+            <option value="webspeech">Browser (gratis, Chrome/Android)</option>
+            <option value="cloud">Cloud Whisper (iPhone, lingua automatica)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Reattività sul parlato continuo</span>
+          <select name="segmentation">
+            <option value="fast">Massima (frasi più corte)</option>
+            <option value="balanced">Bilanciata</option>
+            <option value="accurate">Precisa (frasi più lunghe)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Chi parla per primo</span>
+          <select name="firstSpeaker">
+            <option value="them">Interlocutore</option>
+            <option value="me">Io</option>
+          </select>
+        </label>
+        <label class="switch">
+          <input type="checkbox" name="autoTurn">
+          <span>Cambio turno automatico <small>(dopo ogni traduzione ascolta chi deve rispondere)</small></span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" name="fullDuplex">
+          <span>Ascolto continuo <small>(solo con auricolari: il microfono resta attivo mentre l'app parla)</small></span>
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Voce</legend>
+        <label class="field">
+          <span>Motore</span>
+          <select name="ttsEngine">
+            <option value="browser">Voci di sistema</option>
+            <option value="cloud">Voci neurali cloud</option>
+          </select>
+        </label>
+        <label class="field" data-tts="browser">
+          <span>Voce per <b id="myVoiceLabel"></b></span>
+          <select name="myVoice"></select>
+        </label>
+        <label class="field" data-tts="browser">
+          <span>Voce per <b id="theirVoiceLabel"></b></span>
+          <select name="theirVoice"></select>
+        </label>
+        <label class="field" data-tts="cloud">
+          <span>Voce cloud</span>
+          <select name="cloudVoice">
+            <option value="">Predefinita del server</option>
+            <option>alloy</option><option>ash</option><option>ballad</option><option>coral</option>
+            <option>echo</option><option>fable</option><option>nova</option><option>onyx</option>
+            <option>sage</option><option>shimmer</option><option>verse</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Velocità <output id="rateOut"></output></span>
+          <input type="range" name="rate" min="0.8" max="1.4" step="0.05">
+        </label>
+        <button id="testVoice" class="btn btn-ghost" type="button">Prova voci</button>
+      </fieldset>
+
+      <fieldset>
+        <legend>Visualizzazione e accesso</legend>
+        <label class="switch">
+          <input type="checkbox" name="showSource">
+          <span>Mostra il testo originale</span>
+        </label>
+        <label class="field" id="tokenField">
+          <span>Token di accesso al server</span>
+          <input type="password" name="accessToken" autocomplete="off" placeholder="Solo se richiesto dal server">
+        </label>
+        <button id="clearBtn" class="btn btn-ghost" type="button">Cancella conversazione</button>
+      </fieldset>
+
+      <p id="serverInfo" class="server-info"></p>
+      <button class="btn" value="save">Salva</button>
+    </form>
+  </dialog>
+</body>
+</html>

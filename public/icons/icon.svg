@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4f8cff"/>
+      <stop offset="1" stop-color="#2dd4bf"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#0e1116"/>
+  <!-- due fumetti sovrapposti: le due lingue -->
+  <path d="M96 150c0-28 22-50 50-50h150c28 0 50 22 50 50v86c0 28-22 50-50 50H190l-58 46v-46h14c-28 0-50-22-50-50z" fill="url(#g)"/>
+  <path d="M416 262c0-28-22-50-50-50H236c-28 0-50 22-50 50v76c0 28 22 50 50 50h96l58 46v-46c14 0 26-22 26-50z" fill="#eef1f5" opacity=".95"/>
+  <!-- onde sonore -->
+  <g fill="none" stroke="#0e1116" stroke-width="16" stroke-linecap="round">
+    <path d="M250 300v40"/><path d="M286 286v68"/><path d="M322 300v40"/><path d="M358 312v16"/>
+  </g>
+</svg>
