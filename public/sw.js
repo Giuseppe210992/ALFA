@@ -9,7 +9,7 @@
  *
  * Per pubblicare una nuova versione basta incrementare VERSION.
  */
-const VERSION = 'alfa-v1.0.0';
+const VERSION = 'alfa-v1.1.0';
 const SHELL = [
   '/',
   '/index.html',
