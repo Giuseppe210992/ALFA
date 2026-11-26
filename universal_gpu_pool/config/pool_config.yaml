@@ -1,0 +1,35 @@
+# Configurazione del pool (formato piatto chiave: valore)
+# SICUREZZA: genera un token lungo e casuale. Non esporre su Internet senza HTTPS.
+# Esempio: python -c "import secrets; print(secrets.token_urlsafe(32))"
+token: change-me
+host: 127.0.0.1             # solo localhost di default (non 0.0.0.0)
+port: 8765
+store_root: ./gpu_pool_store   # su Colab: cartella di Google Drive montato
+local_api_worker: true         # avvia un worker locale per remote_api (path free senza Kaggle)
+heartbeat_interval: 10      # secondi
+lease_timeout: 45           # secondi di silenzio prima di dichiarare il nodo offline
+handoff_threshold: 0.7      # pre-allerta al 70%
+session_limit_s: 32400      # durata prudenziale sessione gratuita (9 h)
+max_attempts: 5
+default_vram_gb: 14
+
+# --- storage: local (cartella) oppure s3 (S3/R2/B2/MinIO). Le credenziali S3 vanno SOLO in variabili d'ambiente
+store_backend: local
+s3_bucket: nome-bucket
+s3_prefix: gpu_pool
+s3_endpoint_url: ""          # es. https://<account>.r2.cloudflarestorage.com
+s3_region: ""
+
+# --- launcher (Kaggle). Controlla le quote GPU attuali sul tuo account prima di impostare il budget
+router_url: http://127.0.0.1:8765       # come il launcher raggiunge il router
+router_public_url: https://pool.example.com   # come i worker su Kaggle raggiungono il router (HTTPS!)
+launcher_slots: ["TUO_USERNAME_KAGGLE/gpupool-w1", "TUO_USERNAME_KAGGLE/gpupool-w2"]
+max_nodes: 2
+gpu_hours_budget_week: 20
+launch_cooldown_s: 60
+startup_timeout_s: 900
+launcher_interval_s: 60
+worker_max_idle_s: 600
+
+# --- notifiche push a fine job (opzionale): URL di un topic ntfy.sh o server ntfy tuo
+notify_url: ""

@@ -1,0 +1,4 @@
+# HTTPS automatico (Let's Encrypt) davanti al router. Sostituisci il dominio.
+pool.example.com {
+    reverse_proxy 127.0.0.1:8765
+}

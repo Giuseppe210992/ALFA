@@ -1,0 +1,7 @@
+# Profilo di default del job (usato dal planner quando mancano parametri)
+adapter: demo
+budget_vram_gb: 14
+weights_gb: 4
+gb_per_item: 0.3
+overlap: 5
+steps_per_turn: 200

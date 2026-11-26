@@ -1,0 +1,10 @@
+[Unit]
+Description=GPU Pool launcher (Kaggle)
+After=gpupool-router.service
+[Service]
+WorkingDirectory=/opt/universal_gpu_pool
+EnvironmentFile=/etc/gpupool.env
+ExecStart=/usr/bin/python3 run_launcher.py
+Restart=always
+[Install]
+WantedBy=multi-user.target

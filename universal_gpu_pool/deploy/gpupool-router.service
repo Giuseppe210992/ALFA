@@ -1,0 +1,11 @@
+# /etc/systemd/system/gpupool-router.service  -> systemctl enable --now gpupool-router
+[Unit]
+Description=GPU Pool router
+After=network-online.target
+[Service]
+WorkingDirectory=/opt/universal_gpu_pool
+EnvironmentFile=/etc/gpupool.env
+ExecStart=/usr/bin/python3 run_router.py
+Restart=always
+[Install]
+WantedBy=multi-user.target
