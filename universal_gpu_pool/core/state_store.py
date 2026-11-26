@@ -5,7 +5,7 @@ Promozione di un output in 2 fasi (immune ai "worker zombie"):
   1. il worker fa stage_output(): carica in outputs/<step>/<worker_id>/ + digest
   2. il ROUTER, unico scrittore dello stato, fa finalize_output(): verifica e scrive il puntatore
      outputs/<step>/_COMMITTED.json. Chi legge (fetch_output) segue solo quel puntatore."""
-import hashlib, json, os, shutil
+import hashlib, json, os, shutil, tempfile
 from pathlib import Path
 
 
@@ -31,7 +31,7 @@ def dir_digest(d):
 
 class _Base:
     dir_digest = staticmethod(dir_digest)
-    scratch = Path("/tmp/gpu_pool_scratch")
+    scratch = Path(tempfile.gettempdir()) / "gpu_pool_scratch"
 
     def tmp_dir(self, job_id, step_id, worker_id):
         d = self.scratch / job_id / f"{step_id}_{worker_id}"
@@ -109,7 +109,7 @@ class LocalStore(_Base):
 class S3Store(_Base):
     """Credenziali SOLO da variabili d'ambiente (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)."""
 
-    def __init__(self, bucket, prefix="", endpoint_url=None, region=None, cache="/tmp/gpu_pool_fetch"):
+    def __init__(self, bucket, prefix="", endpoint_url=None, region=None, cache=os.path.join(tempfile.gettempdir(), "gpu_pool_fetch")):
         import boto3
         self.s3 = boto3.client("s3", endpoint_url=endpoint_url or None, region_name=region or None)
         self.bucket = bucket

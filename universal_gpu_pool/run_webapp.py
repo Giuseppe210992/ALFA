@@ -2,25 +2,54 @@
 """Avvia la webapp GPU Pool: router + worker locale (API free) + interfaccia nel browser.
 
 Uso:
-    python run_webapp.py
+    python run_webapp.py                 # apre il browser già autenticato
     python run_webapp.py --port 8765
     python run_webapp.py --no-browser
 
-Il worker locale esegue i job remote_api sullo stesso host del router
-(cosi non servono nodi Kaggle ne passare le API key ai notebook).
+Al primo avvio genera un token sicuro e lo salva in config/local_config.yaml.
+Le chiavi API si inseriscono dalla webapp («Account e chiavi»): vengono salvate in
+config/secrets.env (solo su questo computer) e usate subito, senza riavviare.
+In alternativa funzionano anche le variabili d'ambiente (CEREBRAS_API_KEY, GROQ_API_KEY, ...).
 
-Variabili utili:
-    CEREBRAS_API_KEY / OPENROUTER_API_KEY / SCALEWAY_API_KEY
+Il worker locale esegue i job remote_api sullo stesso host del router
+(così non servono nodi Kaggle né passare le API key ai notebook).
 """
 import argparse
 import os
 import secrets
+import socket
+import sys
 import threading
 import time
 import webbrowser
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+WEAK_TOKENS = ("", "change-me", "changeme", "token", None)
+
+
+def _port_free(host, port):
+    with socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET) as s:
+        try:
+            s.bind((host, port))
+            return True
+        except OSError:
+            return False
+
 
 def main():
+    if sys.version_info < (3, 9):
+        sys.exit("Serve Python 3.9 o più recente (hai %d.%d). Scaricalo da https://www.python.org/downloads/"
+                 % sys.version_info[:2])
+    # Tutti i percorsi (config/, store) sono relativi alla cartella del progetto,
+    # qualunque sia la cartella da cui si lancia lo script (doppio clic incluso).
+    os.chdir(HERE)
+    if HERE not in sys.path:
+        sys.path.insert(0, HERE)
+    try:
+        sys.stdout.reconfigure(errors="replace")   # console Windows senza UTF-8
+    except Exception:
+        pass
+
     ap = argparse.ArgumentParser(description="GPU Pool — webapp")
     ap.add_argument("--config", default="config/pool_config.yaml")
     ap.add_argument("--host", default=None)
@@ -31,10 +60,12 @@ def main():
                     help="non avviare il worker locale (solo router)")
     args = ap.parse_args()
 
-    from core.config import load_config
+    from core.config import load_config, save_local
     from core.aggregator_api import Router, make_server
     from core.watchdog import Watchdog
     from core.state_store import open_store
+    from core.secrets_store import load_into_env, SECRETS_FILE
+    from core.remote_api_backend import load_providers, save_providers, PROVIDERS_FILE
 
     cfg = load_config(args.config)
     if args.host:
@@ -44,15 +75,16 @@ def main():
     if args.token:
         cfg["token"] = args.token
 
-    # Sicurezza: token di default prevedibile
-    if not cfg.get("token") or cfg.get("token") in ("change-me", "changeme", "token"):
-        generated = secrets.token_urlsafe(32)
-        cfg["token"] = generated
-        print()
-        print("  [!] Token di default insicuro: ne ho generato uno per questa sessione.")
-        print(f"  [!] Token: {generated}")
-        print("  [!] Salvalo in config/pool_config.yaml per le prossime volte.")
-        print()
+    # Token: generato una volta sola e salvato in config/local_config.yaml (escluso da git)
+    if cfg.get("token") in WEAK_TOKENS:
+        cfg["token"] = secrets.token_urlsafe(32)
+        save_local(args.config, {"token": cfg["token"]})
+        print("  Token generato e salvato in config/local_config.yaml")
+
+    # Chiavi salvate dalla webapp + file dei provider (creato con i valori predefiniti)
+    loaded = load_into_env()
+    if not PROVIDERS_FILE.exists():
+        save_providers(load_providers())
 
     host = cfg.get("host") or "127.0.0.1"
     if host in ("0.0.0.0", "::"):
@@ -60,44 +92,60 @@ def main():
         print("  [!] Usa HTTPS (Caddy) e un token forte prima di esporre su Internet.")
         print()
 
-    open_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
     port = int(cfg.get("port") or 8765)
-    url = f"http://{open_host}:{port}/"
+    if not args.port:
+        for cand in range(port, port + 20):
+            if _port_free(host, cand):
+                if cand != port:
+                    print(f"  Porta {port} occupata: uso {cand}")
+                port = cand
+                break
+    cfg["port"] = port
+    open_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+    base_url = f"http://{open_host}:{port}"
 
-    keys = [k for k in ("CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "SCALEWAY_API_KEY") if os.environ.get(k)]
-    if not keys:
-        print("  [!] Nessuna API key free trovata nell'ambiente.")
-        print("  [!] export CEREBRAS_API_KEY=...  oppure OPENROUTER_API_KEY=...")
-        print()
-    else:
-        print(f"  API key rilevate: {', '.join(keys)}")
+    providers = load_providers()
+    with_key = [p.label or p.name for p in providers if p.enabled and p.base_url and p.has_key()]
+
+    # Cache risposte + contatori di quota: nell'archivio del progetto (sopravvive ai riavvii)
+    if cfg.get("store_backend", "local") != "s3":
+        os.environ.setdefault("GPU_POOL_API_CACHE",
+                              os.path.abspath(os.path.join(str(cfg.get("store_root") or "gpu_pool_store"), "api_cache")))
 
     store = open_store(cfg)
     router = Router(cfg, store=store)
     Watchdog(router, interval=5).start()
-    server = make_server(router, host, port)
+    try:
+        server = make_server(router, host, port)
+    except OSError as e:
+        print(f"  [!] Impossibile aprire {host}:{port}: {e}")
+        print("      Prova con: python run_webapp.py --port 8800")
+        sys.exit(1)
 
     start_local = cfg.get("local_api_worker", True) and not args.no_local_worker
     if start_local:
         def _local_worker():
+            from worker.worker_daemon import Worker
             time.sleep(0.4)
-            try:
-                from worker.worker_daemon import Worker
-                base = f"http://127.0.0.1:{port}"
-                w = Worker(base, cfg["token"], store, name="local-api",
-                           hb=max(5, int(cfg.get("heartbeat_interval", 10))),
-                           poll=1.5, session_limit_s=24 * 3600, verbose=True)
-                w.run(max_idle_s=None)
-            except Exception as e:
-                print(f"  [!] Worker locale terminato: {e}")
+            while True:     # se il worker termina (errore o fine sessione) ne parte un altro
+                try:
+                    w = Worker(base_url, cfg["token"], store, name="local-api", api_only=True,
+                               hb=max(5, int(cfg.get("heartbeat_interval", 10))),
+                               poll=1.0, session_limit_s=24 * 3600, verbose=bool(cfg.get("verbose_worker")))
+                    w.run(max_idle_s=None)
+                except Exception as e:
+                    print(f"  [!] Worker locale: {e} (riavvio tra 5 s)")
+                time.sleep(5)
 
         threading.Thread(target=_local_worker, daemon=True, name="local-api-worker").start()
-        print("  Worker locale: attivo (path API free senza GPU esterne)")
+
+    # Il link contiene il token nel frammento (#): resta nel browser, non viene inviato in rete.
+    login_url = f"{base_url}/#t={cfg['token']}"
 
     def _open():
-        time.sleep(0.7)
+        time.sleep(0.8)
         try:
-            webbrowser.open(url)
+            webbrowser.open(login_url)
         except Exception:
             pass
 
@@ -105,14 +153,21 @@ def main():
         threading.Thread(target=_open, daemon=True).start()
 
     print()
-    print("  ==========================================")
-    print("       GPU Pool — Webapp avviata")
-    print("  ==========================================")
-    print(f"  Interfaccia:  {url}")
-    print(f"  Token:        {cfg.get('token', '')}")
-    print(f"  Store:        {cfg.get('store_root', '')}")
+    print("  =========================================")
+    print("        GPU Pool — Webapp avviata")
+    print("  =========================================")
+    print(f"  Apri:        {login_url}")
+    print(f"  (indirizzo:  {base_url}/  — token in config/local_config.yaml)")
+    print(f"  Archivio:    {os.path.abspath(str(cfg.get('store_root', '')))}")
+    if with_key:
+        print(f"  Account API: {', '.join(with_key)}")
+    else:
+        print("  Account API: nessuno. Nella webapp apri «Account e chiavi» e incolla una chiave")
+        print("               gratuita (Groq, Cerebras o Gemini): bastano 2 minuti.")
+    if loaded:
+        print(f"  Chiavi caricate da {os.path.relpath(SECRETS_FILE)}: {', '.join(loaded)}")
+    print("  Worker locale: " + ("attivo (API gratuite, nessuna GPU necessaria)" if start_local else "disattivato"))
     print()
-    print("  Percorso gratis: nell'UI scegli «Fai una domanda»")
     print("  Ctrl+C per terminare.")
     print()
     try:

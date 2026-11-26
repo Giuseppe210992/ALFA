@@ -1,7 +1,8 @@
+import os, tempfile
 from pathlib import Path
 
 
-def local_cache(path="/tmp/gpu_pool_cache"):
+def local_cache(path=os.path.join(tempfile.gettempdir(), "gpu_pool_cache")):
     p = Path(path); p.mkdir(parents=True, exist_ok=True)
     return p
 def fetch_weights(store, name, local):

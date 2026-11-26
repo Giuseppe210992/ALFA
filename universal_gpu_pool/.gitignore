@@ -5,3 +5,5 @@ models_cache/
 config/secrets.env
 config/local_config.yaml
 .venv/
+e2e_screens/
+config/providers.json

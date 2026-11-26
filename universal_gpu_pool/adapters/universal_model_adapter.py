@@ -98,6 +98,7 @@ class UniversalModelAdapter(BaseAdapter):
         if items:
             handler = getattr(self, f"_run_{runtime}")
             handler(params, items, opts, out_path, stats, cache_dir, ctx)
+        self.last_metrics = dict(stats)
         ctx.progress(1.0)
 
     # ---------- output atomico ----------
@@ -133,28 +134,35 @@ class UniversalModelAdapter(BaseAdapter):
 
     # ---------- runtime: remote_api (FREE path principale) ----------
     def _run_remote_api(self, params, todo, opts, out_path, stats, cache_dir, ctx):
-        from core.remote_api_backend import RemoteAPIBackend
-        be = RemoteAPIBackend(
-            cache_dir=str(cache_dir / "api_results"),
-            state_file=str(cache_dir / "api_usage.json"),
-        )
-        results = be.run_batch(
-            todo,
-            workers=int(opts.get("workers", 4)),
-            max_tokens=opts.get("max_tokens", 512),
-            temperature=opts.get("temperature", 0.3),
-        )
-        for r in results:
+        # Backend unico per processo: quote, cooldown e cache condivisi tra tutti gli step
+        from core.remote_api_backend import get_shared_backend
+        be = get_shared_backend()
+        system = opts.get("system") or params.get("system")
+        if system:
+            todo = [dict(it, messages=[{"role": "system", "content": system}] + _messages(it)) for it in todo]
+
+        inputs = {str(it.get("id")): it.get("input") for it in todo if it.get("input") is not None}
+
+        def on_result(r):
             rec = {"id": r["id"], "ok": r["ok"]}
+            if str(r["id"]) in inputs:
+                rec["input"] = inputs[str(r["id"])]
             if r["ok"]:
-                rec.update({"text": r.get("text"), "provider": r.get("provider"), "model": r.get("model")})
+                rec.update({"text": r.get("text"), "provider": r.get("provider"), "model": r.get("model"),
+                            "cached": r.get("cached", False)})
             else:
                 rec["error"] = r.get("error")
             self._write(out_path, rec, stats)
-            # progress approssimativo
-            done = stats["ok"] + stats["failed"]
-            if todo:
-                ctx.progress(min(0.99, done / len(todo)))
+            # progresso reale, item per item
+            ctx.progress(min(0.99, (stats["ok"] + stats["failed"]) / len(todo)))
+
+        be.run_batch(
+            todo,
+            workers=int(opts.get("workers", 4)),
+            on_result=on_result,
+            max_tokens=int(opts.get("max_tokens", 512)),
+            temperature=float(opts.get("temperature", 0.3)),
+        )
 
     # ---------- runtime: llama.cpp (server locale effimero) ----------
     def _run_llama_cpp(self, params, todo, opts, out_path, stats, cache_dir, ctx):

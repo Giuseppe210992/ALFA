@@ -1,4 +1,4 @@
-import base64, io, json, subprocess, threading, zipfile
+import base64, io, json, os, subprocess, tempfile, threading, zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -25,6 +25,7 @@ try:  # i segreti stanno nei Kaggle Secrets del notebook, MAI nel codice
     for k in (
         "POOL_TOKEN", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
         "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "SCALEWAY_API_KEY",
+        "GROQ_API_KEY", "GEMINI_API_KEY", "CUSTOM_API_KEY",
     ):
         try: os.environ[k] = us.get_secret(k)
         except Exception: pass
@@ -38,7 +39,7 @@ Worker(CFG["router_url"], os.environ["POOL_TOKEN"], open_store(CFG), CFG["worker
 
 
 def render_kernel_script(cfg, slot, bundle):
-    wcfg = {k: cfg.get(k) for k in ("store_backend", "s3_bucket", "s3_prefix", "s3_endpoint_url", "s3_region",
+    wcfg = {k: cfg.get(k) for k in ("store_backend", "store_root", "s3_bucket", "s3_prefix", "s3_endpoint_url", "s3_region",
                                     "heartbeat_interval", "session_limit_s")}
     wcfg.update(router_url=cfg["router_public_url"], worker_name=slot, max_idle_s=cfg.get("worker_max_idle_s", 600))
     return KERNEL_TEMPLATE.format(zip_b64=base64.b64encode(bundle).decode(), cfg_json=json.dumps(wcfg))
@@ -47,11 +48,27 @@ def render_kernel_script(cfg, slot, bundle):
 class KaggleBackend:
     """Usa la CLI ufficiale `kaggle` (pip install kaggle; KAGGLE_USERNAME / KAGGLE_KEY nell'ambiente)."""
 
-    def __init__(self, cfg, workdir="/tmp/kaggle_push"):
+    def __init__(self, cfg, workdir=os.path.join(tempfile.gettempdir(), "kaggle_push")):
         self.cfg, self.workdir = cfg, Path(workdir)
 
     def _run(self, args):
         return subprocess.run(["kaggle"] + args, capture_output=True, text=True, timeout=180)
+
+    def check(self):
+        """Errori di configurazione che renderebbero inutile lanciare un nodo."""
+        problems = []
+        if self.cfg.get("store_backend", "local") != "s3":
+            problems.append("i worker Kaggle richiedono uno storage condiviso: imposta store_backend: s3 "
+                            "(R2/B2/S3/MinIO) in config/pool_config.yaml — con 'local' i risultati "
+                            "resterebbero sul nodo Kaggle e il router non li vedrebbe mai")
+        url = str(self.cfg.get("router_public_url") or "")
+        if not url.startswith("https://") or "example.com" in url:
+            problems.append("router_public_url deve essere l'indirizzo HTTPS pubblico del router "
+                            "(es. un tunnel Cloudflare o il tuo dominio con Caddy)")
+        slots = self.cfg.get("launcher_slots") or []
+        if not slots or any("TUO_USERNAME" in s for s in slots):
+            problems.append("launcher_slots: sostituisci TUO_USERNAME_KAGGLE con il tuo username Kaggle")
+        return problems
 
     def prepare(self, slot):
         d = self.workdir / slot.replace("/", "__")

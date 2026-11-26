@@ -11,6 +11,13 @@ ap.add_argument("--dry-run", action="store_true", help="genera i file del kernel
 a = ap.parse_args()
 cfg = load_config(a.config)
 backend = KaggleBackend(cfg)
+problems = backend.check()
+if problems:
+    print("Configurazione Kaggle incompleta:")
+    for pr in problems:
+        print("  -", pr)
+    if not a.dry_run:
+        raise SystemExit(2)
 if a.dry_run:
     for s in cfg["launcher_slots"]:
         print("preparato:", backend.prepare(s))
