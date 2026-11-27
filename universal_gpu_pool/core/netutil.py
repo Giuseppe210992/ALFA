@@ -21,6 +21,27 @@ _ctx_default = None
 _ctx_bundle = None
 
 
+def lan_ip():
+    """Indirizzo di questo computer nella rete locale (quello da digitare sul telefono), o None."""
+    import socket
+    cands = []
+    try:                                    # nessun pacchetto viene inviato: serve solo a scegliere la scheda di rete in uso
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("192.0.2.1", 9))
+        cands.append(s.getsockname()[0]); s.close()
+    except OSError:
+        pass
+    try:
+        cands += socket.gethostbyname_ex(socket.gethostname())[2]
+    except OSError:
+        pass
+    for ip in cands:
+        parts = ip.split(".")
+        if len(parts) == 4 and not ip.startswith(("127.", "169.254.", "0.")):
+            return ip
+    return None
+
+
 class NetError(RuntimeError):
     """Errore di rete/HTTP con messaggio leggibile. `.code` è lo status HTTP (0 = rete assente)."""
     def __init__(self, msg, code=0, body=""):

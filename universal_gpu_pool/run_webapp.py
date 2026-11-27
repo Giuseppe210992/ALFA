@@ -56,6 +56,8 @@ def main():
     ap.add_argument("--port", type=int, default=None)
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--token", default=None)
+    ap.add_argument("--lan", action="store_true",
+                    help="rendi la webapp raggiungibile dal telefono (stessa rete Wi-Fi)")
     ap.add_argument("--no-local-worker", action="store_true",
                     help="non avviare il worker locale (solo router)")
     args = ap.parse_args()
@@ -74,6 +76,8 @@ def main():
         cfg["port"] = args.port
     if args.token:
         cfg["token"] = args.token
+    if args.lan:
+        cfg["host"] = "0.0.0.0"
 
     # Token: generato una volta sola e salvato in config/local_config.yaml (escluso da git)
     if cfg.get("token") in WEAK_TOKENS:
@@ -87,7 +91,7 @@ def main():
         save_providers(load_providers())
 
     host = cfg.get("host") or "127.0.0.1"
-    if host in ("0.0.0.0", "::"):
+    if host in ("0.0.0.0", "::") and not args.lan:
         print("  [!] host=0.0.0.0 espone il servizio su tutte le interfacce.")
         print("  [!] Usa HTTPS (Caddy) e un token forte prima di esporre su Internet.")
         print()
@@ -158,6 +162,18 @@ def main():
     print("  =========================================")
     print(f"  Apri:        {login_url}")
     print(f"  (indirizzo:  {base_url}/  — token in config/local_config.yaml)")
+    if args.lan:
+        from core.netutil import lan_ip
+        ip = lan_ip()
+        print()
+        if ip:
+            print("  DAL TELEFONO (collegato alla STESSA Wi-Fi del computer), apri:")
+            print(f"     http://{ip}:{port}/#t={cfg['token']}")
+            print("  Se Windows chiede di consentire l'accesso, scegli «Consenti» (rete privata).")
+        else:
+            print("  [!] Non riesco a trovare l'indirizzo del computer nella rete: sei collegato alla Wi-Fi?")
+        print("  [!] Il collegamento non è cifrato: usalo solo su una Wi-Fi di cui ti fidi.")
+        print()
     print(f"  Archivio:    {os.path.abspath(str(cfg.get('store_root', '')))}")
     if with_key:
         print(f"  Account API: {', '.join(with_key)}")

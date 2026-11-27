@@ -186,6 +186,7 @@ details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
         </div>
       </div>
       <div class="row">
+        <button class="btn ghost sm" id="btn-phone">📱 Telefono</button>
         <button class="btn ghost sm" id="btn-accounts">🔑 Account e chiavi</button>
         <span class="pill" id="conn"><span class="dot" id="conn-dot"></span> <span id="conn-txt">…</span></span>
         <button class="btn ghost sm" id="btn-logout">Esci</button>
@@ -199,6 +200,15 @@ details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
         <span class="muted">Basta una chiave API gratuita (Groq, Cerebras o Google Gemini). Ci vogliono 2 minuti.</span>
       </div>
       <button class="btn warn" id="btn-onboard">Collega account</button>
+    </div>
+
+    <!-- TELEFONO -->
+    <div class="card hide" id="phone-card" style="margin-bottom:14px">
+      <div class="row space">
+        <h2 style="margin:0">📱 Usalo dal telefono</h2>
+        <button class="btn ghost sm" id="btn-phone-close">Chiudi</button>
+      </div>
+      <div id="phone-body" class="muted" style="margin-top:8px;font-size:.9rem;line-height:1.55"></div>
     </div>
 
     <!-- ACCOUNT / PROVIDER -->
@@ -785,6 +795,37 @@ function initDrops() {
   });
   $('#d3-url').addEventListener('input', () => { if ($('#d3-url').value.trim() && d3Drop.get()) d3Drop.clear(); });
 }
+
+/* ---------------- telefono ---------------- */
+async function openPhone(open) {
+  $('#phone-card').classList.toggle('hide', !open);
+  if (!open) return;
+  const body = $('#phone-body');
+  body.textContent = 'Controllo…';
+  let n;
+  try { n = await api('/network'); } catch (e) { body.textContent = 'Errore: ' + e.message; return; }
+  if (!n.lan) {
+    body.innerHTML = `<p style="margin-top:0">Ora la webapp si apre solo su questo computer. Per usarla dal telefono:</p>
+      <ol class="steps-list"><li>Chiudi la finestra nera del programma.</li>
+      <li>Avvia <b>avvia-telefono.bat</b> (invece di avvia.bat).</li>
+      <li>Torna qui e riapri questo pannello: troverai l'indirizzo da aprire sul telefono.</li></ol>
+      <p class="small">Il telefono deve essere collegato alla <b>stessa Wi-Fi</b> del computer, che deve restare acceso.</p>`;
+    return;
+  }
+  if (!n.url) { body.textContent = 'Non trovo l\'indirizzo del computer nella rete: sei collegato alla Wi-Fi?'; return; }
+  const link = n.url + '#t=' + encodeURIComponent(tok);
+  body.innerHTML = `<ol class="steps-list" style="margin-top:0"><li>Collega il telefono alla <b>stessa Wi-Fi</b> del computer.</li>
+    <li>Apri questo indirizzo nel browser del telefono (comodo: invialo a te stesso su WhatsApp/Telegram e toccalo):</li></ol>
+    <div class="keyrow" style="display:flex;gap:8px;margin-top:6px"><input type="text" id="phone-link" readonly style="flex:1" value="${escapeHtml(link)}"><button class="btn sm" id="phone-copy">Copia</button></div>
+    <p class="small" style="margin-top:10px">Se non si apre: quando Windows chiede di consentire l'accesso scegli <b>«Consenti»</b> (rete privata). Il computer deve restare acceso con la finestra nera aperta. Non funziona con la rete dati (4G/5G).<br>
+    <span style="color:var(--warn)">⚠ Il collegamento non è cifrato: usalo solo su una Wi-Fi di cui ti fidi.</span> Dal telefono puoi anche scegliere i file dalla galleria.</p>`;
+  $('#phone-copy').onclick = async () => {
+    try { await navigator.clipboard.writeText(link); toast('Indirizzo copiato'); }
+    catch { $('#phone-link').select(); toast('Selezionato: copialo a mano'); }
+  };
+}
+$('#btn-phone').onclick = () => openPhone($('#phone-card').classList.contains('hide'));
+$('#btn-phone-close').onclick = () => openPhone(false);
 
 /* ---------------- GPU (Kaggle) ---------------- */
 let gpu = null;

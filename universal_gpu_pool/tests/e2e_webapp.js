@@ -245,6 +245,13 @@ Worker('${baseUrl}', cfg['token'], open_store(cfg), name='gpu-e2e', poll=0.3, hb
     assert(fs.readFileSync(await dl4.path(), 'utf8') === 'ciao dal browser\nciao dal browser\nciao dal browser\nrighe nel file di input: 3\n', 'GitHub: il file trascinato dal PC è arrivato al programma (3 righe) e il risultato si scarica');
     await page.screenshot({ path: path.join(shots, '10_repo_risultato.png'), fullPage: true });
 
+    // 6d. pannello «Telefono»: senza --lan spiega come avviarlo
+    await page.click('#btn-phone');
+    await page.waitForSelector('#phone-card:not(.hide)');
+    await page.waitForFunction(() => document.querySelector('#phone-body').textContent.includes('avvia-telefono.bat'));
+    assert(true, 'Telefono: senza --lan il pannello spiega di avviare avvia-telefono.bat');
+    await page.click('#btn-phone-close');
+
     // 7. ricarica pagina: resta autenticato
     await page.reload();
     await page.waitForSelector('#conn-txt:has-text("Connesso")');

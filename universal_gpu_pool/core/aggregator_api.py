@@ -425,6 +425,13 @@ class Router:
         from core.remote_api_backend import get_shared_backend
         return get_shared_backend()
 
+    def network_info(self):
+        from core import netutil
+        host, port = getattr(self, "bind", ("127.0.0.1", 0))
+        lan = host in ("0.0.0.0", "::")
+        ip = netutil.lan_ip() if lan else None
+        return {"lan": lan, "ip": ip, "port": port, "url": f"http://{ip}:{port}/" if ip else None}
+
     def settings(self):
         import os
         from core.remote_api_backend import load_providers
@@ -700,6 +707,8 @@ class Router:
             return 200, self.set_key(body)
         if (method, path) == ("POST", "/settings/test"):
             return 200, self.test_provider(body)
+        if (method, path) == ("GET", "/network"):
+            return 200, self.network_info()
         if (method, path) == ("GET", "/gpu"):
             return 200, self.gpu_status()
         if (method, path) == ("POST", "/gpu/kaggle"):
@@ -892,4 +901,5 @@ def make_server(router, host, port):
 
     srv = ThreadingHTTPServer((host, port), H)
     srv.daemon_threads = True
+    router.bind = (host, srv.server_address[1])
     return srv

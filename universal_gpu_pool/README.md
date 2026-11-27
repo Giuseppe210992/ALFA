@@ -40,6 +40,13 @@ Serve solo **Python 3.8+** (funziona anche su Windows 7). Nessuna libreria da in
 Le chiavi restano **solo sul tuo computer** in `config/secrets.env` (esclusa da git, permessi 600).
 Il token di accesso è in `config/local_config.yaml`. Nessuno dei due file va condiviso.
 
+### Dal telefono (stessa Wi-Fi)
+Avvia **`avvia-telefono.bat`** (Windows) o `avvia-telefono.command` (macOS) invece di `avvia`. Nel terminale compare l'indirizzo da aprire sul telefono
+(oppure, nella webapp, il pulsante **«📱 Telefono»**): contiene già il token, quindi entri senza digitare nulla; puoi inviartelo su WhatsApp/Telegram.
+Il telefono deve essere sulla **stessa Wi-Fi** del computer, che resta acceso con la finestra nera aperta; alla prima richiesta di Windows scegli «Consenti».
+Dal telefono si possono scegliere anche foto e video dalla galleria. Il collegamento non è cifrato (HTTP): usalo solo su una Wi-Fi fidata.
+**Fuori casa (rete dati) non funziona**: servirebbe un tunnel (Cloudflare/Tailscale) che non gira su Windows 7.
+
 ### Problemi comuni
 - **«Nessuna chiave API configurata»** → apri «Account e chiavi» e collega almeno un servizio.
 - **Prova → HTTP 401/403** → chiave sbagliata o revocata: incollane una nuova.
@@ -54,7 +61,7 @@ Il token di accesso è in `config/local_config.yaml`. Nessuno dei due file va co
 
 ## Test
 
-    python run_tests.py          # 104 test (backend API, router, worker, webapp via HTTP) + demo originali
+    python run_tests.py          # 107 test (backend API, router, worker, webapp via HTTP) + demo originali
     python run_tests.py --e2e    # + test nel browser su una copia pulita (Node + Playwright)
 
 I test usano un finto server OpenAI (`tests/fake_openai.py`): nessuna rete, nessuna chiave reale.

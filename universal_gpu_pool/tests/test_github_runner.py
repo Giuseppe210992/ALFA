@@ -637,9 +637,25 @@ class SystemTest(EnvCase):
         self.router.cfg.pop("max_upload_gb")
         self.assertEqual(self.call("GET", "/health")[0], 200)
 
+    def test_6c_network_info_for_phone(self):
+        code, n = self.call("GET", "/network")
+        self.assertEqual(code, 200)
+        self.assertFalse(n["lan"], "su 127.0.0.1 il telefono non può collegarsi")
+        self.assertIsNone(n["url"]); self.assertGreater(n["port"], 0)
+        self.router.bind = ("0.0.0.0", n["port"])                       # come con --lan
+        try:
+            code, n2 = self.call("GET", "/network")
+            self.assertTrue(n2["lan"])
+            if n2["ip"]:
+                self.assertEqual(n2["url"], f"http://{n2['ip']}:{n2['port']}/")
+                self.assertFalse(n2["ip"].startswith(("127.", "169.254.")))
+        finally:
+            self.router.bind = ("127.0.0.1", n["port"])
+        self.assertEqual(self.call("GET", "/network", token="x")[0], 401)
+
     def test_7_webapp_has_github_and_gpu_ui(self):
         code, page = self.call("GET", "/", token=None)
-        for needle in ('data-mode="repo"', "form-repo", "/repos/analyze", "/gpu/kaggle", "kaggle.com/settings/api"):
+        for needle in ('data-mode="repo"', "form-repo", "/repos/analyze", "/gpu/kaggle", "kaggle.com/settings/api", "btn-phone", "avvia-telefono.bat"):
             self.assertIn(needle, page)
 
 
