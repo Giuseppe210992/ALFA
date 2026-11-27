@@ -1,6 +1,6 @@
 """Router centrale: API REST + macchina a stati + pagina di stato. Tutte le transizioni di
 stato sono codice deterministico sotto un unico lock."""
-import hmac, json, threading, time, urllib.request, uuid
+import hmac, json, mimetypes, os, threading, time, urllib.request, uuid
 from collections import Counter
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -18,6 +18,19 @@ PAGE = _WEBAPP if _WEBAPP.exists() else _LEGACY
 
 class BadRequest(Exception):
     """Richiesta non valida: diventa un 400 con messaggio leggibile."""
+
+
+class NotFound(Exception):
+    """Risorsa inesistente: diventa un 404."""
+
+
+class FileResponse:
+    """Risposta binaria (file di un job): il server la invia a blocchi, senza caricarla in memoria."""
+    def __init__(self, path, filename):
+        self.path, self.filename = path, filename
+
+
+MAX_FILES_LISTED = 200
 
 
 class Router:
@@ -525,6 +538,21 @@ class Router:
                              "(oppure questo tipo di job non è rilanciabile)")
         return self.plan_and_submit({"adapter": m["adapter"], "items": items, "params": m.get("params", {})})
 
+    def download_file(self, job_id, step, name):
+        """Percorso sicuro di un file di output committato (nessuna uscita dalla cartella dello step)."""
+        with self.lock:
+            j = self.jobs.get(job_id)
+            if not j or step not in j["steps"] or j["steps"][step]["status"] != "completed":
+                raise NotFound("file non disponibile (job o step inesistente/non completato)")
+        out_dir = os.path.realpath(str(self.store.fetch_output(job_id, step)))
+        target = os.path.realpath(os.path.join(out_dir, name))
+        if os.path.commonpath([out_dir, target]) != out_dir or not os.path.isfile(target):
+            raise NotFound("file inesistente")
+        base = os.path.basename(target)
+        if base.startswith(("_", ".")) or base == "results.jsonl":
+            raise NotFound("file inesistente")
+        return FileResponse(target, base)
+
     # ---------- dispatch HTTP ----------
     @staticmethod
     def _q(q, *names):
@@ -578,6 +606,9 @@ class Router:
             action = parts[2] if len(parts) >= 3 else ""
             if method == "GET" and action == "results":
                 return 200, self.job_results(jid)
+            if method == "GET" and action == "download":
+                step, name = self._q(q, "step", "name")
+                return 200, self.download_file(jid, step, name)
             if method == "POST" and action == "cancel":
                 return 200, {"ok": self.cancel_job(jid)}
             if method == "POST" and action == "retry":
@@ -602,13 +633,18 @@ class Router:
             status, adapter = j["status"], j["manifest"].get("adapter")
             step_errors = [f"{sid}: {st.get('error')}" for sid, st in j["steps"].items()
                            if st["status"] == "failed" and st.get("error")]
-        items, errors = [], list(step_errors)
+        items, errors, files = [], list(step_errors), []
         for sid in done:
             try:
                 out_dir = self.store.fetch_output(job_id, sid)
             except Exception as e:
                 errors.append(f"{sid}: {e}")
                 continue
+            for fp in sorted(out_dir.rglob("*")):
+                rel = fp.relative_to(out_dir).as_posix()
+                if (fp.is_file() and fp.name not in ("results.jsonl",) and not fp.name.startswith(("_", "."))
+                        and len(files) < MAX_FILES_LISTED):
+                    files.append({"step": sid, "name": rel, "size": fp.stat().st_size})
             # universal_model e simili -> results.jsonl
             jl = out_dir / "results.jsonl"
             if jl.exists():
@@ -642,6 +678,7 @@ class Router:
         if items and all("id" in r for r in items):
             items.sort(key=_key)
         return {"job_id": job_id, "status": status, "adapter": adapter, "items": items, "errors": errors,
+                "files": files,
                 "ok": sum(1 for r in items if r.get("ok") is True),
                 "failed": sum(1 for r in items if r.get("ok") is False)}
 
@@ -685,9 +722,33 @@ def make_server(router, host, port):
                 code, obj = router.handle(method, u.path, q, body)
             except BadRequest as e:
                 code, obj = 400, {"error": str(e)}
+            except NotFound as e:
+                code, obj = 404, {"error": str(e)}
             except Exception as e:
                 code, obj = 500, {"error": f"{type(e).__name__}: {e}"}
+            if isinstance(obj, FileResponse):
+                return self._send_file(obj)
             self._send(code, obj)
+
+        def _send_file(self, fr):
+            size = os.path.getsize(fr.path)
+            ctype = {".glb": "model/gltf-binary", ".json": "application/json", ".npz": "application/octet-stream",
+                     ".log": "text/plain; charset=utf-8"}.get(os.path.splitext(fr.filename)[1].lower()) \
+                or mimetypes.guess_type(fr.filename)[0] or "application/octet-stream"
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(size))
+            safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in fr.filename)
+            self.send_header("Content-Disposition", f'attachment; filename="{safe}"')
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            with open(fr.path, "rb") as f:
+                while True:
+                    chunk = f.read(1 << 20)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
 
         def _send_raw(self, code, data, ctype):
             self.send_response(code)

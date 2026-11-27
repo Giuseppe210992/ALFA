@@ -44,6 +44,7 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
 
   const app = await startProc('python3', ['run_webapp.py', '--no-browser'], { cwd: proj, env }, /Apri:\s+(http:\/\/\S+)/);
   const loginUrl = app.m[1];
+  const baseUrl = loginUrl.replace(/\/#t=.*/, '');
   console.log('webapp:', loginUrl.replace(/#t=.*/, '#t=***'));
 
   const browser = await chromium.launch();
@@ -113,6 +114,50 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
     const csv = fs.readFileSync(await dl.path(), 'utf8');
     assert(csv.split('\r\n').length === 6 && csv.includes('Mai più'), 'download CSV corretto');
     await page.screenshot({ path: path.join(shots, '4_batch.png'), fullPage: true });
+
+    // 6b. ricostruzione 3D: modo dedicato, avviso senza GPU, job in coda, poi nodo GPU -> file scaricabili
+    await page.click('[data-mode="3d"]');
+    await page.click('#btn-next1');
+    await page.fill('#d3-url', 'non-un-link');
+    await page.click('#btn-next2');
+    assert(await page.locator('#wiz-2').isVisible(), '3D: link non valido bloccato nel passo 2');
+    await page.fill('#d3-url', 'https://esempio.org/stanza.mp4');
+    await page.click('#btn-next2');
+    assert((await page.locator('#summary').textContent()).includes('Nessun nodo GPU'), '3D: avviso "nessun nodo GPU" nel riepilogo');
+    await page.screenshot({ path: path.join(shots, '6_3d_riepilogo.png'), fullPage: true });
+    await page.click('#btn-back3'); await page.click('#btn-back2');
+    // lavoro 3D "vero" via modalità esperta, con il finto repository di test
+    const photos = path.join(proj, 'e2e_photos');
+    fs.mkdirSync(photos, { recursive: true });
+    for (let i = 0; i < 4; i++) fs.writeFileSync(path.join(photos, `00${i}.png`), 'fake' + i);
+    await page.click('[data-mode=advanced]');
+    await page.click('#btn-next1');
+    await page.selectOption('#adv-adapter', 'lingbot_map');
+    await page.fill('#adv-params', JSON.stringify({ title: '3D e2e', options: {
+      repo_dir: path.join(proj, 'tests', 'stub_lingbot'), model_path: path.join(proj, 'config', 'pool_config.yaml'),
+      require_gpu: false, check_deps: false } }));
+    await page.fill('#adv-items', JSON.stringify([{ id: 'stanza', images: photos }]));
+    await page.click('#btn-next2');
+    await page.click('#btn-run');
+    await page.waitForSelector('#jobs .job:first-child .tag:has-text("in coda")', { timeout: 15000 });
+    assert(true, '3D: senza nodo GPU il lavoro resta «in coda»');
+    const gpu = spawn('python3', ['-c', `
+import sys; sys.path.insert(0,'.')
+from core.config import load_config; from core.state_store import open_store; from worker.worker_daemon import Worker
+cfg = load_config('config/pool_config.yaml')
+Worker('${baseUrl}', cfg['token'], open_store(cfg), name='gpu-e2e', poll=0.3, hb=1, verbose=False).run()
+`], { cwd: proj, env, stdio: 'ignore' });
+    try {
+      await page.waitForSelector('#jobs .job:first-child .tag.ok', { timeout: 40000 });
+      await page.click('#jobs .job:first-child');
+      await page.waitForSelector('#filebtns button', { timeout: 15000 });
+      const labels = await page.locator('#filebtns button').allTextContents();
+      assert(labels.some(l => l.includes('camera_poses.json')) && labels.some(l => l.includes('predictions.npz')), '3D: pulsanti di download: ' + labels.map(l => l.replace('⬇ ', '').split(' ')[0]).join(', '));
+      const [dl3] = await Promise.all([page.waitForEvent('download'), page.locator('#filebtns button', { hasText: 'camera_poses.json' }).click()]);
+      const poses = JSON.parse(fs.readFileSync(await dl3.path(), 'utf8'));
+      assert(poses.frames.length === 4 && dl3.suggestedFilename() === 'camera_poses.json', '3D: file scaricato dal browser (4 pose)');
+      await page.screenshot({ path: path.join(shots, '7_3d_risultati.png'), fullPage: true });
+    } finally { gpu.kill(); }
 
     // 7. ricarica pagina: resta autenticato
     await page.reload();

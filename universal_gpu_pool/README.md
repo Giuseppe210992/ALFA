@@ -54,7 +54,7 @@ Il token di accesso è in `config/local_config.yaml`. Nessuno dei due file va co
 
 ## Test
 
-    python run_tests.py          # 28 test (backend API, router, worker, webapp via HTTP) + demo originali
+    python run_tests.py          # 44 test (backend API, router, worker, webapp via HTTP) + demo originali
     python run_tests.py --e2e    # + test nel browser su una copia pulita (Node + Playwright)
 
 I test usano un finto server OpenAI (`tests/fake_openai.py`): nessuna rete, nessuna chiave reale.
@@ -75,6 +75,33 @@ I test usano un finto server OpenAI (`tests/fake_openai.py`): nessuna rete, ness
   cache delle risposte (stessa domanda = zero quota). Provider in `config/providers.json` (creato al primo avvio).
 - I job «Usa la GPU del pool» restano in coda finché non si collega un nodo GPU: il worker solo-API non li prende.
 - Hand-off anticipato al 70%, lease 45 s, commit a due fasi: vedi demo e `core/state_store.py`.
+
+## Ricostruzione 3D con LingBot-Map (richiede un nodo GPU)
+
+[LingBot-Map](https://github.com/Robbyant/lingbot-map) (Apache-2.0) ricostruisce una scena 3D da un video o da foto:
+posizione della camera e nuvola di punti. Nel pool è l'adapter `lingbot_map`; nella webapp è **«Ricostruzione 3D»**.
+
+- **Input**: un link diretto a un video (mp4, mov…) oppure a uno **ZIP di foto** (jpg/png).
+- **Dove gira**: solo su un nodo con GPU NVIDIA (Kaggle/Colab). Il worker «Questo computer» non ha GPU e **non**
+  prende questi lavori: finché non c'è un nodo GPU il lavoro resta «in coda» e la webapp lo segnala.
+- **Cosa fa il nodo da solo**: clona il repository, installa le librerie leggere mancanti, scarica i pesi
+  `lingbot-map.pt` (~4,6 GB, solo la prima volta di ogni sessione) ed esegue il `demo.py` ufficiale senza
+  interfaccia grafica (il visualizzatore viser è sostituito da un salvataggio su file). PyTorch con CUDA deve già esserci.
+- **Risultato** (pulsanti di download in «Risultati»): `scene.glb` (nuvola di punti + traiettoria, si apre con Blender,
+  MeshLab o gltf-viewer.donmccurdy.com), `camera_poses.json`, `predictions.npz` (pose, profondità, confidenza), `run.log`.
+- **Opzioni** (modalità esperta → `params.options`): `fps`, `stride`, `first_k`, `mode` (`streaming`/`windowed` per
+  oltre ~3000 fotogrammi), `keyframe_interval`, `num_scale_frames` (2 se la GPU va in memoria piena),
+  `checkpoint` (`lingbot-map-long.pt`), `use_sdpa`, `repo_dir`, `model_path`. Elenco completo in `adapters/lingbot_map_adapter.py`.
+- **LingBot-Map 2.0** esiste (`Robbyant/lingbot-map-v2`) ma al 27/11/2026 i suoi pesi sono *privati* (serve un account
+  con accesso) e la licenza è CC BY-NC (solo uso non commerciale): per questo l'adapter usa la 1.0.
+
+**Verificato**: salvataggio dei risultati con il vero modulo di esportazione GLB di LingBot-Map su dati sintetici;
+tutta la catena (download video/ZIP da URL, ZIP non sicuri rifiutati, avanzamento, errori spiegati, job in coda
+finché non c'è una GPU, elenco e download dei file, percorsi non consentiti respinti) con un finto repository
+(`tests/stub_lingbot`); le opzioni passate a `demo.py` esistono nel `demo.py` reale.
+**Non verificato** (serve una GPU): l'esecuzione del modello vero. Per provarla su una macchina con GPU:
+`LINGBOT_MAP_DIR=/percorso/lingbot-map LINGBOT_MAP_IMAGES=/percorso/foto python -m unittest tests.test_lingbot.RealRepoTest`.
+Limite attuale: il video/le foto vanno raggiunti con un link; non c'è ancora il caricamento di file dalla webapp.
 
 ## Nodi GPU gratuiti su Kaggle (opzionale, avanzato)
 

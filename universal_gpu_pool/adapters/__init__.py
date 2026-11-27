@@ -9,6 +9,8 @@ def get_adapter(name):
         from adapters.llm_batch_adapter import LLMBatchAdapter as A
     elif name == "training_finetune":
         from adapters.training_finetune_adapter import TrainingFinetuneAdapter as A
+    elif name == "lingbot_map":
+        from adapters.lingbot_map_adapter import LingBotMapAdapter as A
     elif name == "universal_model":
         from adapters.universal_model_adapter import UniversalModelAdapter as A
     else:

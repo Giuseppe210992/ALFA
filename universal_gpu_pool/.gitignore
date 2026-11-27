@@ -7,3 +7,4 @@ config/local_config.yaml
 .venv/
 e2e_screens/
 config/providers.json
+e2e_photos/

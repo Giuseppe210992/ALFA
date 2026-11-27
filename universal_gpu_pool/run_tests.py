@@ -32,7 +32,7 @@ def main():
         dst = os.path.join(tmp, "universal_gpu_pool")
         shutil.copytree(HERE, dst, ignore=shutil.ignore_patterns(
             "__pycache__", "gpu_pool_store", "models_cache", "secrets.env", "local_config.yaml",
-            "providers.json", "e2e_screens", ".git"))
+            "providers.json", "e2e_screens", "e2e_photos", ".git"))
         r = subprocess.run(["node", "tests/e2e_webapp.js", dst, os.path.join(HERE, "e2e_screens")], cwd=dst)
         ok &= r.returncode == 0
         shutil.rmtree(tmp, ignore_errors=True)
