@@ -39,9 +39,21 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
   // la porta 0 non è utile qui: rilancio su una porta nota
   fake.p.kill();
   const fport = 18000 + Math.floor(Math.random() * 1000);
-  const fake2 = await startProc('python3', ['-m', 'tests.fake_openai', String(fport)], { cwd: proj, env }, /fake OpenAI su (\S+)/);
+  const planFile = path.join(proj, 'e2e_plan.json');
+  fs.writeFileSync(planFile, JSON.stringify({
+    title: 'Demo App', summary: 'Ripete un testo e lo salva in un file.', gpu: false, setup: ['echo installazione-ok'],
+    run: 'python app.py --text {testo} --repeat {ripetizioni} --out {OUT}',
+    inputs: [{ key: 'testo', label: 'Testo da ripetere', type: 'text', required: true },
+             { key: 'ripetizioni', label: 'Quante volte', type: 'number', default: '2', required: false }],
+    outputs: [], timeout_min: 5 }));
+  const fake2 = await startProc('python3', ['-m', 'tests.fake_openai', String(fport)], { cwd: proj, env: { ...env, FAKE_PLAN_JSON: planFile } }, /fake OpenAI su (\S+)/);
   const fakeUrl = fake2.m[1];
 
+  const kport = 19000 + Math.floor(Math.random() * 500), gport = 19600 + Math.floor(Math.random() * 300);
+  const ghDir = path.join(proj, 'e2e_gh');
+  const fkag = await startProc('python3', ['-m', 'tests.fake_kaggle', String(kport)], { cwd: proj, env }, /fake Kaggle su (\S+)/);
+  const fgh = await startProc('python3', ['-m', 'tests.fake_github', String(gport), ghDir], { cwd: proj, env }, /fake GitHub (\{.*\})/);
+  Object.assign(env, JSON.parse(fgh.m[1]), { GPOOL_KAGGLE_API: fkag.m[1] });
   const app = await startProc('python3', ['run_webapp.py', '--no-browser'], { cwd: proj, env }, /Apri:\s+(http:\/\/\S+)/);
   const loginUrl = app.m[1];
   const baseUrl = loginUrl.replace(/\/#t=.*/, '');
@@ -52,7 +64,8 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
-  page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+  // i 400 sono risposte volute (token/link sbagliati inseriti dal test): la webapp li mostra come messaggio
+  page.on('console', m => { if (m.type() === 'error' && !/status of 400/.test(m.text())) errors.push(m.text()); });
   try {
     // 1. login automatico dal link del terminale
     await page.goto(loginUrl);
@@ -159,6 +172,57 @@ Worker('${baseUrl}', cfg['token'], open_store(cfg), name='gpu-e2e', poll=0.3, hb
       await page.screenshot({ path: path.join(shots, '7_3d_risultati.png'), fullPage: true });
     } finally { gpu.kill(); }
 
+    // 6c. account GPU (Kaggle) dal pannello, poi «Programma da GitHub» senza scrivere una riga di codice
+    await page.click('#btn-accounts');
+    await page.waitForSelector('#kaggle-box');
+    assert(await page.locator('#kg-steps').isVisible(), 'GPU: istruzioni passo-passo visibili finché Kaggle non è collegato');
+    assert((await page.locator('#kaggle-box').textContent()).includes('kaggle.com/settings/api'), 'GPU: link alla pagina dei token');
+    assert((await page.locator('.prov', { hasText: 'Google Colab' }).textContent()).includes('non collegabile'), 'GPU: Colab spiegato onestamente');
+    await page.fill('#kg-token', 'token-sbagliato');
+    await page.click('#kg-save');
+    await page.waitForSelector('#kg-out.bad');
+    assert((await page.locator('#kg-out').textContent()).includes('non valido'), 'GPU: token sbagliato → messaggio chiaro');
+    await page.fill('#kg-token', 'good-token');
+    await page.click('#kg-save');
+    await page.waitForSelector('#kg-out.ok');
+    assert((await page.locator('#kg-out').textContent()).includes('tester'), 'GPU: collegato come «tester»');
+    assert((await page.locator('#kg-quota').textContent()).includes('28'), 'GPU: ore GPU rimaste mostrate (28 h)');
+    assert(await page.locator('#kg-steps').isHidden(), 'GPU: istruzioni nascoste dopo il collegamento');
+    await page.screenshot({ path: path.join(shots, '8_gpu_kaggle.png'), fullPage: true });
+    // l'IA risponde con il piano (chiave speciale del finto provider)
+    await page.locator('.prov[data-name="custom"] [data-k=key]').fill('plan');
+    await page.locator('.prov[data-name="custom"] [data-a=save]').click();
+    await page.waitForSelector('.prov[data-name="custom"] .out.ok');
+    await page.click('#btn-accounts-close');
+
+    await page.click('[data-mode=repo]');
+    await page.click('#btn-next1');
+    await page.fill('#repo-url', 'non-un-link');
+    await page.click('#btn-analyze');
+    await page.waitForSelector('#repo-status.err');
+    assert(true, 'GitHub: link non valido → errore comprensibile: ' + (await page.locator('#repo-status').textContent()).slice(0, 60));
+    await page.fill('#repo-url', 'https://github.com/o/demo');
+    await page.click('#btn-analyze');
+    await page.waitForSelector('#repo-plan:not(.hide)', { timeout: 30000 });
+    assert((await page.locator('#rp-src').textContent()).includes('IA'), 'GitHub: analisi con IA');
+    assert((await page.locator('#rp-summary').textContent()).includes('Ripete un testo'), 'GitHub: spiegazione in italiano');
+    assert(await page.locator('#rpi-testo').isVisible() && await page.locator('#rpi-ripetizioni').isVisible(), 'GitHub: il modulo dei campi si genera da solo');
+    await page.screenshot({ path: path.join(shots, '9_repo_analisi.png'), fullPage: true });
+    await page.click('#btn-next2');
+    assert(await page.locator('#wiz-2').isVisible(), 'GitHub: campo obbligatorio vuoto blocca il passo successivo');
+    await page.fill('#rpi-testo', 'ciao dal browser');
+    await page.fill('#rpi-ripetizioni', '3');
+    await page.click('#btn-next2');
+    const sum = await page.locator('#summary').textContent();
+    assert(sum.includes('o/demo') && sum.includes('ciao dal browser') && sum.includes('Kaggle'), 'GitHub: riepilogo con progetto, valori e Kaggle');
+    await page.click('#btn-run');
+    await page.waitForSelector('#jobs .job:first-child .tag.ok', { timeout: 90000 });
+    await page.waitForFunction(() => document.querySelector('#results').textContent.includes('Completato in'), null, { timeout: 30000 });
+    assert(true, 'GitHub: risultato «Completato» mostrato nel pannello Risultati');
+    const [dl4] = await Promise.all([page.waitForEvent('download'), page.locator('#filebtns button', { hasText: 'result.txt' }).click()]);
+    assert(fs.readFileSync(await dl4.path(), 'utf8') === 'ciao dal browser\nciao dal browser\nciao dal browser\n', 'GitHub: file scaricato = risultato del programma eseguito');
+    await page.screenshot({ path: path.join(shots, '10_repo_risultato.png'), fullPage: true });
+
     // 7. ricarica pagina: resta autenticato
     await page.reload();
     await page.waitForSelector('#conn-txt:has-text("Connesso")');
@@ -185,6 +249,6 @@ Worker('${baseUrl}', cfg['token'], open_store(cfg), name='gpu-e2e', poll=0.3, hb
     process.exitCode = 1;
   } finally {
     await browser.close();
-    app.p.kill(); fake2.p.kill();
+    app.p.kill(); fake2.p.kill(); fkag.p.kill(); fgh.p.kill();
   }
 })();

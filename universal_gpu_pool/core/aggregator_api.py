@@ -188,8 +188,8 @@ class Router:
         m = job["manifest"]
         params = m.get("params") or {}
         runtime = params.get("runtime") or (params.get("options") or {}).get("runtime")
-        if runtime == "remote_api":
-            return True
+        if runtime in ("remote_api", "kaggle") or m.get("adapter") == "github_repo":
+            return True      # orchestrazione da questo computer: la GPU è quella di Kaggle, non un nodo del pool
         return m.get("adapter") == "universal_model" and not params.get("model_ref") and not runtime
 
     def _can_take(self, worker, job):
@@ -504,6 +504,99 @@ class Router:
             raise BadRequest("manca 'name'")
         return self._backend().test_provider(name)
 
+    # ---------- account GPU (Kaggle) ----------
+    _gpu_cache = {}
+
+    def gpu_status(self):
+        from core.kaggle_client import KaggleClient
+        connected = KaggleClient.configured()
+        c = self._gpu_cache if connected else {}
+        return {"kaggle": {"connected": connected, "username": c.get("username"), "quota": c.get("quota"),
+                           "checked": c.get("checked"), "error": c.get("error", "")},
+                "colab": {"automatable": False}}
+
+    def kaggle_verify(self, client):
+        """Controlla le credenziali e legge la quota GPU. Solleva BadRequest con un messaggio chiaro."""
+        from core.kaggle_client import KaggleError
+        try:
+            user = client.whoami()
+            try:
+                quota = client.quota()
+            except KaggleError:
+                quota = None          # la quota è un di più: l'account funziona anche senza
+        except KaggleError as e:
+            raise BadRequest(str(e))
+        self._gpu_cache = {"username": user, "quota": quota, "checked": time.time(), "error": ""}
+        return user
+
+    def set_kaggle(self, body):
+        import json as _json
+        from core.kaggle_client import KaggleClient
+        from core.secrets_store import set_secret
+        raw = str((body or {}).get("token") or "").strip()
+        names = ("KAGGLE_API_TOKEN", "KAGGLE_USERNAME", "KAGGLE_KEY")
+        if not raw:
+            for n in names:
+                set_secret(n, "")
+            self._gpu_cache = {}
+            self.log("account Kaggle scollegato")
+            return self.gpu_status()
+        legacy = None
+        if raw.startswith("{"):
+            try:
+                d = _json.loads(raw)
+                legacy = (str(d["username"]).strip(), str(d["key"]).strip())
+            except (ValueError, KeyError, TypeError):
+                raise BadRequest("Non riesco a leggere il file kaggle.json incollato: incolla solo il token.")
+        elif any(ch.isspace() for ch in raw):
+            raise BadRequest("Il token non deve contenere spazi o a capo: copialo di nuovo per intero.")
+        client = KaggleClient(username=legacy[0], key=legacy[1]) if legacy else KaggleClient(token=raw)
+        if legacy:
+            from core.kaggle_client import KaggleError
+            try:
+                client.quota()
+                self._gpu_cache = {"username": legacy[0], "quota": client.quota(), "checked": time.time(), "error": ""}
+            except KaggleError as e:
+                raise BadRequest(str(e))
+            set_secret("KAGGLE_USERNAME", legacy[0]); set_secret("KAGGLE_KEY", legacy[1]); set_secret("KAGGLE_API_TOKEN", "")
+        else:
+            self.kaggle_verify(client)
+            set_secret("KAGGLE_API_TOKEN", raw); set_secret("KAGGLE_USERNAME", ""); set_secret("KAGGLE_KEY", "")
+        self.log(f"account Kaggle collegato: {self._gpu_cache.get('username')}")
+        return self.gpu_status()
+
+    def test_kaggle(self):
+        from core.kaggle_client import KaggleClient, KaggleError
+        try:
+            client = KaggleClient.from_env()
+        except KaggleError as e:
+            raise BadRequest(str(e))
+        self.kaggle_verify(client)
+        return self.gpu_status()
+
+    # ---------- analisi di un progetto GitHub ----------
+    def analyze_repo(self, body):
+        from core import github_repo, repo_planner
+        from core.kaggle_client import KaggleClient
+        url = str((body or {}).get("url") or "")
+        try:
+            owner, repo, ref = github_repo.parse_url(url)
+            info = github_repo.fetch_repo(owner, repo, ref)
+        except github_repo.RepoError as e:
+            raise BadRequest(str(e))
+        try:
+            backend = self._backend()
+        except Exception:
+            backend = None
+        plan = repo_planner.make_plan(info, backend)
+        if info["archived"]:
+            plan["warnings"].append("Questo progetto è archiviato: potrebbe non essere più mantenuto.")
+        if info["size_kb"] > 2_000_000:
+            plan["warnings"].append("Il progetto è molto grande (oltre 2 GB): lo scaricamento sarà lento.")
+        return {"repo": {k: info[k] for k in ("owner", "repo", "ref", "url", "description", "stars", "license",
+                                              "size_kb", "archived", "language")},
+                "plan": plan, "kaggle_connected": KaggleClient.configured()}
+
     def cancel_job(self, job_id):
         with self.lock:
             job = self.jobs.get(job_id)
@@ -527,6 +620,10 @@ class Router:
             if not job:
                 raise BadRequest("job sconosciuto")
             m = job["manifest"]
+        if m.get("adapter") == "github_repo":
+            if any(r.get("ok") for r in res["items"]) and not any(r.get("ok") is False for r in res["items"]):
+                raise BadRequest("niente da rilanciare: il programma è già riuscito")
+            return self.plan_and_submit({"adapter": "github_repo", "items": [], "params": m.get("params", {})})
         ok_ids = {str(r.get("id")) for r in res["items"] if r.get("ok") and r.get("id") is not None}
         items = []
         for s in m["steps"]:
@@ -597,6 +694,14 @@ class Router:
             return 200, self.set_key(body)
         if (method, path) == ("POST", "/settings/test"):
             return 200, self.test_provider(body)
+        if (method, path) == ("GET", "/gpu"):
+            return 200, self.gpu_status()
+        if (method, path) == ("POST", "/gpu/kaggle"):
+            return 200, self.set_kaggle(body)
+        if (method, path) == ("POST", "/gpu/kaggle/test"):
+            return 200, self.test_kaggle()
+        if (method, path) == ("POST", "/repos/analyze"):
+            return 200, self.analyze_repo(body)
         if path.startswith("/jobs/"):
             parts = [p for p in path.split("/") if p]
             # /jobs/{id}, /jobs/{id}/results, /jobs/{id}/cancel, /jobs/{id}/retry

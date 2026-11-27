@@ -111,6 +111,22 @@ textarea{min-height:110px;resize:vertical}
 .prov .out.bad{color:var(--bad)}
 .switch{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;color:var(--mut);margin:0;cursor:pointer}
 
+/* gpu / repo */
+.sect{margin:14px 0 4px;font-size:.78rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--mut)}
+.steps-list{margin:8px 0 0;padding-left:20px;font-size:.88rem;line-height:1.6}
+.steps-list li{margin-bottom:2px}
+.planbox{background:var(--bg2);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:12px}
+.planbox h3{margin:12px 0 4px}
+.warnbox{background:rgba(240,180,41,.10);border:1px solid rgba(240,180,41,.4);border-radius:10px;padding:8px 12px;margin-top:8px;font-size:.84rem}
+.field{margin-top:8px}
+.check{display:flex;gap:8px;align-items:center;margin-top:10px;font-size:.88rem;color:var(--fg)}
+.check input{width:auto}
+details.tech{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+
 /* login */
 .login-box{max-width:400px;margin:12vh auto 0}
 .login-box .card{padding:22px}
@@ -189,6 +205,37 @@ textarea{min-height:110px;resize:vertical}
         Se ne colleghi più d'uno il pool li alterna da solo quando uno finisce la quota gratuita.
         Le chiavi restano solo su questo computer (<code>config/secrets.env</code>).
       </p>
+      <div class="sect">🖥️ GPU in cloud — per far girare programmi pesanti</div>
+      <div class="prov" id="kaggle-box">
+        <div class="head">
+          <div class="title">Kaggle <span id="kg-status"><span class="tag">…</span></span></div>
+          <span class="muted small" id="kg-quota"></span>
+        </div>
+        <div class="muted small" style="margin-top:4px">Gratis: circa 30 ore di GPU a settimana (NVIDIA T4/P100). È quello che usa il sistema per eseguire i programmi.</div>
+        <div id="kg-steps">
+          <ol class="steps-list">
+            <li>Crea un account gratuito su <a href="https://www.kaggle.com/account/login" target="_blank" rel="noopener noreferrer">kaggle.com ↗</a> (puoi entrare con Google).</li>
+            <li><b>Verifica il telefono</b> (serve per attivare GPU e internet): <a href="https://www.kaggle.com/settings" target="_blank" rel="noopener noreferrer">Impostazioni ↗</a> → «Phone verification».</li>
+            <li>Apri <a href="https://www.kaggle.com/settings/api" target="_blank" rel="noopener noreferrer">kaggle.com/settings/api ↗</a>, nella sezione <b>API</b> premi <b>«Generate New Token»</b> e copia il codice che compare.</li>
+            <li>Incollalo qui sotto e premi <b>Collega</b>.</li>
+          </ol>
+          <div class="keyrow">
+            <input type="password" id="kg-token" placeholder="Incolla qui il token di Kaggle" autocomplete="off" spellcheck="false">
+            <button class="btn sm" id="kg-save">Collega</button>
+          </div>
+        </div>
+        <div class="row" id="kg-connected-actions" style="margin-top:8px">
+          <button class="btn ghost sm" id="kg-test">Verifica e aggiorna ore GPU</button>
+          <button class="btn ghost sm" id="kg-del">Scollega</button>
+        </div>
+        <div class="out" id="kg-out"></div>
+        <div class="muted small" style="margin-top:6px">Il token resta solo su questo computer. I programmi che avvii girano nel <b>tuo</b> account Kaggle: avvia solo progetti di cui ti fidi.</div>
+      </div>
+      <div class="prov">
+        <div class="head"><div class="title">Google Colab <span class="tag">non collegabile</span></div></div>
+        <div class="muted small" style="margin-top:4px">Google non permette ai programmi di avviare Colab da soli (non esiste un'interfaccia ufficiale), quindi non posso usarlo in automatico. Per questo il sistema usa Kaggle, che invece lo permette. Colab resta utilizzabile a mano.</div>
+      </div>
+      <div class="sect">🤖 Intelligenza artificiale — per le domande e per capire i progetti GitHub</div>
       <div id="providers"></div>
       <div class="actions">
         <button class="btn ghost sm" id="btn-prov-reset">Ripristina impostazioni predefinite</button>
@@ -215,6 +262,10 @@ textarea{min-height:110px;resize:vertical}
             <button type="button" class="choice" data-mode="batch">
               <span class="ico">📋</span>
               <span><b>Analizza tanti testi</b><span>Incolla più righe: sentiment, etichette, estrazione. Una riga = un elemento.</span></span>
+            </button>
+            <button type="button" class="choice" data-mode="repo">
+              <span class="ico">📦</span>
+              <span><b>Programma da GitHub</b><span>Incolli il link di un progetto: lo installo e lo eseguo io su una GPU gratuita. Zero codice.</span></span>
             </button>
             <button type="button" class="choice" data-mode="3d">
               <span class="ico">🗺️</span>
@@ -255,6 +306,34 @@ textarea{min-height:110px;resize:vertical}
             <label for="batch-lines">Testi da analizzare (uno per riga)</label>
             <textarea id="batch-lines" placeholder="Il prodotto è arrivato in ritardo ma funziona bene.&#10;Esperienza pessima, non lo consiglio.&#10;Nella media, niente di speciale."></textarea>
             <p class="hint">Ogni riga diventa un task separato. Ideale per elenchi e fogli copiati. <span id="batch-count"></span></p>
+          </div>
+          <!-- repo -->
+          <div id="form-repo" class="hide">
+            <label for="repo-url">Link del progetto GitHub</label>
+            <div class="keyrow" style="display:flex;gap:8px">
+              <input id="repo-url" type="text" placeholder="https://github.com/utente/progetto" autocomplete="off" spellcheck="false" style="flex:1">
+              <button class="btn" id="btn-analyze" type="button">🔍 Analizza</button>
+            </div>
+            <p class="hint">Funziona con i progetti pubblici. Leggo la descrizione e gli esempi del progetto per capire da solo come avviarlo e cosa chiederti.</p>
+            <div id="repo-status" class="muted small"></div>
+            <div id="repo-plan" class="planbox hide">
+              <div class="row space"><b id="rp-title" style="font-size:1.05rem"></b><span class="tag" id="rp-src"></span></div>
+              <div class="muted small" id="rp-meta" style="margin-top:2px"></div>
+              <p id="rp-summary" style="margin:8px 0 0"></p>
+              <div id="rp-note" class="muted small" style="margin-top:6px"></div>
+              <div id="rp-warn"></div>
+              <h3 id="rp-inputs-h">Cosa devi fornire</h3>
+              <div id="rp-inputs"></div>
+              <details class="tech">
+                <summary>Dettagli tecnici (facoltativo — puoi ignorarli)</summary>
+                <label for="rp-setup">Installazione (un comando per riga)</label>
+                <textarea id="rp-setup" class="mono" style="min-height:70px"></textarea>
+                <label for="rp-run">Comando da eseguire</label>
+                <textarea id="rp-run" class="mono" style="min-height:60px"></textarea>
+                <p class="hint">Le parti tra graffe, come <code>{testo}</code>, vengono sostituite con ciò che inserisci sopra. <code>{OUT}</code> è la cartella dei risultati.</p>
+                <label class="check"><input type="checkbox" id="rp-gpu"> Usa la GPU (consigliato per modelli AI)</label>
+              </details>
+            </div>
           </div>
           <!-- 3d -->
           <div id="form-3d" class="hide">
@@ -439,7 +518,7 @@ function escapeHtml(t) {
 function openAccounts(open) {
   accountsOpen = open;
   $('#accounts-card').classList.toggle('hide', !open);
-  if (open) { loadSettings(); $('#accounts-card').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  if (open) { loadSettings(); loadGpu(); $('#accounts-card').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 }
 $('#btn-accounts').onclick = () => openAccounts(!accountsOpen);
 $('#btn-accounts-close').onclick = () => openAccounts(false);
@@ -629,6 +708,110 @@ $('#btn-prov-reset').onclick = async () => {
   catch (e) { toast('Errore: ' + e.message); }
 };
 
+/* ---------------- GPU (Kaggle) ---------------- */
+let gpu = null;
+async function loadGpu() {
+  try { gpu = await api('/gpu'); renderGpu(); } catch (e) {}
+}
+function renderGpu() {
+  if (!gpu) return;
+  const k = gpu.kaggle;
+  $('#kg-status').innerHTML = k.connected
+    ? '<span class="tag ok">✓ Collegato' + (k.username ? ' come ' + escapeHtml(k.username) : '') + '</span>'
+    : '<span class="tag">Non collegato</span>';
+  $('#kg-quota').innerHTML = k.connected && k.quota
+    ? 'GPU rimaste questa settimana: <b>' + k.quota.gpu_left_h + ' h</b> su ' + k.quota.gpu_total_h + ' h' : '';
+  $('#kg-steps').classList.toggle('hide', !!k.connected);
+  $('#kg-connected-actions').classList.toggle('hide', !k.connected);
+}
+function kgOut(txt, cls) { const o = $('#kg-out'); o.className = 'out ' + (cls || ''); o.textContent = txt; }
+$('#kg-save').onclick = async (ev) => {
+  const v = $('#kg-token').value.trim();
+  if (!v) { kgOut('Incolla prima il token.', 'bad'); $('#kg-token').focus(); return; }
+  const b = ev.currentTarget; b.disabled = true; kgOut('Controllo il token con Kaggle…', '');
+  try {
+    gpu = await api('/gpu/kaggle', { method: 'POST', body: JSON.stringify({ token: v }) });
+    $('#kg-token').value = '';
+    renderGpu();
+    const q = gpu.kaggle.quota;
+    kgOut('✓ Collegato come ' + gpu.kaggle.username + (q ? '. Ore GPU rimaste: ' + q.gpu_left_h + ' h.' : '.'), 'ok');
+    toast('Kaggle collegato');
+  } catch (e) { kgOut('✗ ' + e.message, 'bad'); }
+  finally { b.disabled = false; }
+};
+$('#kg-token').addEventListener('keydown', e => { if (e.key === 'Enter') $('#kg-save').click(); });
+$('#kg-test').onclick = async (ev) => {
+  const b = ev.currentTarget; b.disabled = true; kgOut('Controllo…', '');
+  try { gpu = await api('/gpu/kaggle/test', { method: 'POST', body: '{}' }); renderGpu(); kgOut('✓ Tutto ok.', 'ok'); }
+  catch (e) { kgOut('✗ ' + e.message, 'bad'); }
+  finally { b.disabled = false; }
+};
+$('#kg-del').onclick = async () => {
+  if (!confirm('Scollegare l\'account Kaggle da questo computer?')) return;
+  try { gpu = await api('/gpu/kaggle', { method: 'POST', body: JSON.stringify({ token: '' }) }); renderGpu(); kgOut('Scollegato.', ''); }
+  catch (e) { kgOut('✗ ' + e.message, 'bad'); }
+};
+
+/* ---------------- Programma da GitHub ---------------- */
+let repoCtx = null;
+function repoStatus(txt, cls, spin) {
+  const el = $('#repo-status');
+  el.className = 'small ' + (cls === 'bad' ? 'err' : 'muted');
+  el.innerHTML = (spin ? '<span class="spin"></span>' : '') + escapeHtml(txt);
+}
+async function analyzeRepo() {
+  const url = $('#repo-url').value.trim();
+  if (!url) { toast('Incolla il link del progetto GitHub.'); $('#repo-url').focus(); return; }
+  const b = $('#btn-analyze'); b.disabled = true;
+  $('#repo-plan').classList.add('hide'); repoCtx = null;
+  repoStatus('Sto leggendo il progetto e capendo come si avvia… (fino a 30 secondi)', '', true);
+  try {
+    repoCtx = await api('/repos/analyze', { method: 'POST', body: JSON.stringify({ url }) });
+    repoStatus('', '');
+    renderRepoPlan();
+  } catch (e) { repoCtx = null; repoStatus('✗ ' + e.message, 'bad'); }
+  finally { b.disabled = false; }
+}
+$('#btn-analyze').onclick = analyzeRepo;
+$('#repo-url').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); analyzeRepo(); } });
+$('#repo-url').addEventListener('input', () => { if (repoCtx && repoCtx.repo.url.toLowerCase().indexOf($('#repo-url').value.trim().toLowerCase().replace(/^https?:\/\/(www\.)?github\.com\//, '')) < 0) { repoCtx = null; $('#repo-plan').classList.add('hide'); } });
+
+function renderRepoPlan() {
+  const { repo, plan } = repoCtx;
+  $('#rp-title').textContent = (plan.title || repo.repo) + '  ·  ' + repo.owner + '/' + repo.repo;
+  const src = $('#rp-src');
+  src.textContent = plan.source === 'ia' ? '🤖 analisi con IA' : '⚙ analisi semplice';
+  src.className = 'tag ' + (plan.source === 'ia' ? 'ok' : 'warn');
+  const bits = [];
+  if (repo.stars) bits.push('⭐ ' + repo.stars);
+  if (repo.license) bits.push('licenza ' + repo.license);
+  if (repo.language) bits.push(repo.language);
+  $('#rp-meta').textContent = bits.join(' · ');
+  $('#rp-summary').textContent = plan.summary || repo.description || '';
+  $('#rp-note').textContent = plan.note || '';
+  $('#rp-warn').innerHTML = (plan.warnings || []).map(w => '<div class="warnbox">⚠ ' + escapeHtml(w) + '</div>').join('');
+  const box = $('#rp-inputs'); box.innerHTML = '';
+  $('#rp-inputs-h').classList.toggle('hide', !plan.inputs.length);
+  plan.inputs.forEach(it => {
+    const d = document.createElement('div'); d.className = 'field';
+    const id = 'rpi-' + it.key;
+    let ctl;
+    if (it.type === 'textarea') ctl = `<textarea id="${id}" placeholder="${escapeHtml(it.default || '')}">${escapeHtml(it.default || '')}</textarea>`;
+    else if (it.type === 'choice') ctl = `<select id="${id}">${it.choices.map(c => `<option value="${escapeHtml(c)}" ${c === it.default ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}</select>`;
+    else if (it.type === 'bool') ctl = `<label class="check"><input type="checkbox" id="${id}" ${it.default === '1' || it.default === 'true' ? 'checked' : ''}> ${escapeHtml(it.label)}</label>`;
+    else if (it.type === 'number') ctl = `<input id="${id}" type="number" step="any" value="${escapeHtml(it.default || '')}">`;
+    else ctl = `<input id="${id}" type="${it.type === 'url' ? 'url' : 'text'}" value="${escapeHtml(it.default || '')}" placeholder="${it.type === 'url' ? 'https://… (link diretto al file)' : ''}" autocomplete="off">`;
+    d.innerHTML = (it.type === 'bool' ? '' : `<label for="${id}" style="margin-top:0">${escapeHtml(it.label)}${it.required ? '' : ' <span class="muted">(facoltativo)</span>'}</label>`) + ctl +
+      (it.help ? `<div class="hint">${escapeHtml(it.help)}</div>` : '') +
+      (it.type === 'url' ? '<div class="hint">Serve un link diretto al file (es. condiviso da Dropbox con ?dl=1 o Google Drive pubblico): il caricamento di file dal computer non è ancora disponibile.</div>' : '');
+    box.appendChild(d);
+  });
+  $('#rp-setup').value = plan.setup.join('\n');
+  $('#rp-run').value = plan.run;
+  $('#rp-gpu').checked = !!plan.gpu;
+  $('#repo-plan').classList.remove('hide');
+}
+
 /* ---------------- wizard ---------------- */
 function setStep(n) {
   step = n;
@@ -638,11 +821,11 @@ function setStep(n) {
     if (el) el.classList.toggle('hide', i !== String(n));
   });
   if (n === 2) {
-    ['chat','batch','3d','local','advanced'].forEach(m => {
+    ['chat','batch','repo','3d','local','advanced'].forEach(m => {
       const f = $('#form-' + m);
       if (f) f.classList.toggle('hide', m !== mode);
     });
-    const first = { chat: '#chat-text', batch: '#batch-instr', '3d': '#d3-url', local: '#local-text', advanced: '#adv-items' }[mode];
+    const first = { chat: '#chat-text', batch: '#batch-instr', repo: '#repo-url', '3d': '#d3-url', local: '#local-text', advanced: '#adv-items' }[mode];
     setTimeout(() => $(first) && $(first).focus(), 30);
   }
   if (n === 3) buildSummary();
@@ -653,6 +836,7 @@ $$('#choices .choice').forEach(btn => {
     $$('#choices .choice').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     mode = btn.dataset.mode;
+    if (mode === 'repo') loadGpu();
   };
   btn.ondblclick = () => setStep(2);
 });
@@ -688,6 +872,17 @@ function validateStep2() {
   if (mode === 'local' && !$('#local-text').value.trim()) {
     toast('Scrivi un prompt per il modello locale.'); return false;
   }
+  if (mode === 'repo') {
+    if (!repoCtx) { toast('Incolla il link e premi «Analizza» prima di continuare.'); return false; }
+    if (!$('#rp-run').value.trim()) { toast('Manca il comando da eseguire: aprilo in «Dettagli tecnici».'); return false; }
+    for (const it of repoCtx.plan.inputs) {
+      const el = $('#rpi-' + it.key);
+      if (!el) continue;
+      const v = el.type === 'checkbox' ? '1' : el.value.trim();
+      if (it.required && !v && it.type !== 'bool' && !it.default) { toast('Compila: ' + it.label); el.focus(); return false; }
+      if (it.type === 'url' && v && !/^https?:\/\/\S+$/i.test(v)) { toast('«' + it.label + '» deve essere un link che inizia con https://'); el.focus(); return false; }
+    }
+  }
   if (mode === '3d') {
     const u = $('#d3-url').value.trim();
     if (!/^https?:\/\/\S+$/i.test(u)) { toast('Inserisci un link diretto che inizi con https://'); return false; }
@@ -708,6 +903,18 @@ function buildSummary() {
     const n = batchLines().length;
     s.innerHTML = `<b>Tipo:</b> Analisi batch (${n} elementi)<br>
       <b>Istruzione:</b> <span class="muted">${escapeHtml($('#batch-instr').value || '(nessuna — usa il testo così com\'è)')}</span>`;
+  } else if (mode === 'repo') {
+    const r = repoCtx.repo, v = repoValues();
+    const vals = repoCtx.plan.inputs.map(i => `<li><b>${escapeHtml(i.label)}:</b> <span class="muted">${escapeHtml((v[i.key] || '—').slice(0, 120))}</span></li>`).join('');
+    const k = gpu && gpu.kaggle;
+    s.innerHTML = `<b>Progetto:</b> ${escapeHtml(r.owner)}/${escapeHtml(r.repo)}<br>
+      <b>Cosa fa:</b> <span class="muted">${escapeHtml(repoCtx.plan.summary || r.description || '')}</span><br>
+      ${vals ? '<ul style="margin:6px 0 0;padding-left:18px">' + vals + '</ul>' : ''}
+      <b>Dove gira:</b> ${$('#rp-gpu').checked ? 'GPU gratuita' : 'computer'} di Kaggle${k && k.connected && k.quota ? ' (ore GPU rimaste: ' + k.quota.gpu_left_h + ' h)' : ''}`;
+    if (!k || !k.connected) {
+      s.innerHTML += `<br><br><span style="color:var(--warn)">⚠ Non hai ancora collegato Kaggle: senza, il lavoro non può partire.</span> <a href="#" id="lnk-kg">Collega Kaggle</a>`;
+      const l = $('#lnk-kg'); if (l) l.onclick = ev => { ev.preventDefault(); openAccounts(true); };
+    }
   } else if (mode === '3d') {
     s.innerHTML = `<b>Tipo:</b> Ricostruzione 3D (LingBot-Map)<br>
       <b>Sorgente:</b> ${$('#d3-kind').value === 'video' ? 'video' : 'ZIP di foto'}<br>
@@ -733,7 +940,27 @@ function hasGpuNode() {
   return !!(lastStatus && (lastStatus.workers || []).some(w => w.status === 'online' && w.name !== 'local-api'));
 }
 
+function repoValues() {
+  const out = {};
+  (repoCtx ? repoCtx.plan.inputs : []).forEach(it => {
+    const el = $('#rpi-' + it.key);
+    if (!el) return;
+    out[it.key] = el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value.trim();
+  });
+  return out;
+}
+
 function buildPayload() {
+  if (mode === 'repo') {
+    const plan = { ...repoCtx.plan,
+      setup: $('#rp-setup').value.split('\n').map(x => x.trim()).filter(Boolean),
+      run: $('#rp-run').value.trim(), gpu: $('#rp-gpu').checked };
+    return {
+      adapter: 'github_repo', items: [],
+      params: { repo_url: repoCtx.repo.url, ref: repoCtx.repo.ref, plan, values: repoValues(),
+                title: '📦 ' + repoCtx.repo.owner + '/' + repoCtx.repo.repo, options: { gpu: plan.gpu } }
+    };
+  }
   if (mode === '3d') {
     const kind = $('#d3-kind').value;
     const url = $('#d3-url').value.trim();
@@ -1060,6 +1287,7 @@ async function enter() {
   showApp();
   await tick();
   await tickSettings();
+  loadGpu();
   if (settings && !settings.ready) openAccounts(true);
 }
 $('#btn-login').onclick = async () => {

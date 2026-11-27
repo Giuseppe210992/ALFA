@@ -54,7 +54,7 @@ Il token di accesso è in `config/local_config.yaml`. Nessuno dei due file va co
 
 ## Test
 
-    python run_tests.py          # 44 test (backend API, router, worker, webapp via HTTP) + demo originali
+    python run_tests.py          # 79 test (backend API, router, worker, webapp via HTTP) + demo originali
     python run_tests.py --e2e    # + test nel browser su una copia pulita (Node + Playwright)
 
 I test usano un finto server OpenAI (`tests/fake_openai.py`): nessuna rete, nessuna chiave reale.
@@ -75,6 +75,38 @@ I test usano un finto server OpenAI (`tests/fake_openai.py`): nessuna rete, ness
   cache delle risposte (stessa domanda = zero quota). Provider in `config/providers.json` (creato al primo avvio).
 - I job «Usa la GPU del pool» restano in coda finché non si collega un nodo GPU: il worker solo-API non li prende.
 - Hand-off anticipato al 70%, lease 45 s, commit a due fasi: vedi demo e `core/state_store.py`.
+
+## Programma da GitHub: incolli il link e parte (senza scrivere codice)
+
+1. **Collega Kaggle** (una volta): «Account e chiavi» → sezione **GPU in cloud** → segui i 4 passi (account gratuito,
+   verifica del telefono, «Generate New Token» su kaggle.com/settings/api, incolla il token). Si vedono le ore GPU rimaste
+   (circa 30 a settimana, gratis). Serve anche un account IA (Groq/Cerebras/Gemini) per l'analisi migliore, ma non è obbligatorio.
+2. **«Programma da GitHub»** → incolla il link del progetto → **Analizza**. Il sistema legge README ed esempi, spiega in
+   italiano cosa fa il programma e **genera da solo il modulo** con i campi da compilare (testo, link a un video, un numero…).
+3. **Continua → Avvia.** Il programma viene scaricato, installato ed eseguito su una GPU gratuita di Kaggle **nel tuo account**;
+   i file prodotti compaiono in «Risultati» con i pulsanti di download, insieme al registro (`run.log`) per capire cosa è successo.
+
+Come funziona: il tuo computer non fa calcoli e **non deve essere raggiungibile da internet**. Manda a Kaggle uno script che clona
+il repository, esegue i comandi di installazione, scarica i file di input, lancia il comando e raccoglie i risultati; poi li scarica.
+Il collegamento a Kaggle usa le stesse chiamate dell'SDK ufficiale ma con la sola libreria standard, quindi funziona con Python 3.8/Windows 7.
+Se manca un account IA, l'analisi usa regole semplici (comandi d'esempio del README, argparse): il comando va controllato in «Dettagli tecnici».
+
+**Limiti onesti**
+- **Colab non è collegabile**: Google non offre un'interfaccia per avviarlo da un programma. Si usa Kaggle (che la offre).
+- **Non tutti i progetti funzionano al primo colpo**: dipendono da pesi enormi, versioni precise di librerie, interfacce web (gradio)…
+  Se fallisce, in «Risultati» vedi le ultime righe del registro; «↻ Riprova» rilancia, e in «Dettagli tecnici» puoi correggere comandi.
+- **I file di input vanno dati come link diretto** (Dropbox con `?dl=1`, Drive pubblico…): il caricamento dal computer non c'è ancora.
+- **Esegui solo progetti di cui ti fidi**: girano nel tuo account Kaggle (sandbox di Kaggle, non sul tuo PC).
+- Solo repository **pubblici**. GitHub concede 60 analisi/ora senza account (variabile `GITHUB_TOKEN` per alzare il limite).
+- Kaggle: 2 sessioni GPU in contemporanea, 9 ore massime ciascuna. L'annullamento di un lavoro dalla webapp non ferma il notebook già partito.
+
+**Verificato**: analisi con un modello IA **vero** (Qwen 3.8 su Groq) su un repository di prova: piano valido con campi in italiano;
+protocollo Kaggle copiato dall'SDK ufficiale (kagglesdk 0.1.38) e provato contro un finto Kaggle che **esegue davvero** lo script generato
+(clone git, installazione, download input, esecuzione, raccolta file, errori, timeout, paginazione); tentativi di iniezione nel testo
+dell'utente neutralizzati; l'intero percorso nel browser (token → analisi → modulo → esecuzione → download). Eseguito su Python 3.13 e 3.8.
+**Non verificato**: nessun test contro il vero Kaggle (da qui non è raggiungibile) né contro l'API di GitHub (l'ambiente di sviluppo la
+blocca per i repository di terzi). Il primo collegamento reale potrebbe richiedere un piccolo aggiustamento: se vedi un errore da Kaggle,
+mandami il messaggio. Per provare l'account reale: `KAGGLE_API_TOKEN_REAL=<token> python -m unittest tests.test_github_runner.RealKaggleTest`.
 
 ## Ricostruzione 3D con LingBot-Map (richiede un nodo GPU)
 

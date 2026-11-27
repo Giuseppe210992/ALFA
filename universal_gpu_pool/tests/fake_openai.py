@@ -13,6 +13,7 @@ Il comportamento dipende dalla chiave usata nell'header Authorization:
   nomodel     -> 404 model not found
 """
 import json
+import os
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,6 +23,7 @@ class FakeOpenAI:
     def __init__(self, rate_n=1, slow_s=2.0):
         self.calls = []
         self.rate_n = rate_n
+        self.plan_json = "{}"
         self.slow_s = slow_s
         self._rate_seen = 0
         self._lock = threading.Lock()
@@ -58,6 +60,9 @@ class FakeOpenAI:
                 prompt = body.get("messages", [{}])[-1].get("content", "")
                 ok = {"choices": [{"message": {"role": "assistant", "content": f"OK: {prompt}"}}],
                       "model": body.get("model")}
+                if key == "plan":      # risponde con il piano JSON impostato dal test (analisi di un repository)
+                    ok["choices"][0]["message"]["content"] = fake.plan_json
+                    return self._send(200, ok)
                 if key == "good":
                     return self._send(200, ok)
                 if key == "bad":
@@ -104,6 +109,8 @@ class FakeOpenAI:
 if __name__ == "__main__":
     import sys
     f = FakeOpenAI()
+    if os.environ.get("FAKE_PLAN_JSON"):
+        f.plan_json = open(os.environ["FAKE_PLAN_JSON"], encoding="utf-8").read()
     if len(sys.argv) > 1:
         f.server.server_close()
         f.server = ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), f.server.RequestHandlerClass)

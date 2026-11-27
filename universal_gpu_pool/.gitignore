@@ -8,3 +8,5 @@ config/local_config.yaml
 e2e_screens/
 config/providers.json
 e2e_photos/
+e2e_gh/
+e2e_plan.json
