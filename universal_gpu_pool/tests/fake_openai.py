@@ -49,7 +49,8 @@ class FakeOpenAI:
             def do_POST(self):
                 n = int(self.headers.get("Content-Length") or 0)
                 body = json.loads(self.rfile.read(n) or b"{}")
-                key = (self.headers.get("Authorization") or "").removeprefix("Bearer ").strip()
+                key = (self.headers.get("Authorization") or "")
+                key = (key[7:] if key.startswith("Bearer ") else key).strip()
                 with fake._lock:
                     fake.calls.append({"key": key, "body": body, "path": self.path, "t": time.time()})
                 if not self.path.endswith("/chat/completions"):

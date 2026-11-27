@@ -4,7 +4,7 @@ Webapp per usare modelli AI grandi **gratis**: le richieste vanno alle API gratu
 Google Gemini, OpenRouter, Scaleway o un tuo endpoint OpenAI-compatibile) con rotazione automatica
 quando un servizio finisce la quota. Opzionale: nodi GPU gratuiti su Kaggle per modelli locali.
 
-Serve solo **Python 3.9+**. Nessuna libreria da installare per l'uso normale.
+Serve solo **Python 3.8+** (funziona anche su Windows 7). Nessuna libreria da installare per l'uso normale.
 
 ---
 

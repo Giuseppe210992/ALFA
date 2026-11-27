@@ -449,7 +449,10 @@ class Router:
             url = str(merged.get("base_url") or "").strip()
             if url and not url.startswith(("https://", "http://")):
                 raise BadRequest(f"{name}: l'URL deve iniziare con https://")
-            merged["base_url"] = url.rstrip("/").removesuffix("/chat/completions")
+            url = url.rstrip("/")
+            if url.endswith("/chat/completions"):
+                url = url[:-len("/chat/completions")]
+            merged["base_url"] = url
             merged["model"] = str(merged.get("model") or "").strip()
             try:
                 out.append(Provider.from_dict(merged))

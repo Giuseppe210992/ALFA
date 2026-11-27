@@ -37,8 +37,8 @@ def _port_free(host, port):
 
 
 def main():
-    if sys.version_info < (3, 9):
-        sys.exit("Serve Python 3.9 o più recente (hai %d.%d). Scaricalo da https://www.python.org/downloads/"
+    if sys.version_info < (3, 8):
+        sys.exit("Serve Python 3.8 o più recente (hai %d.%d). Scaricalo da https://www.python.org/downloads/"
                  % sys.version_info[:2])
     # Tutti i percorsi (config/, store) sono relativi alla cartella del progetto,
     # qualunque sia la cartella da cui si lancia lo script (doppio clic incluso).
