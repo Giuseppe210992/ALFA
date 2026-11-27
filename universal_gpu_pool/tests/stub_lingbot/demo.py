@@ -23,7 +23,11 @@ def main():
     if args.video_path:
         n = 12
     else:
-        n = len([f for f in os.listdir(args.image_folder) if f.lower().endswith((".png", ".jpg"))])
+        import glob      # come load_images() del demo.py vero: solo *.jpg,*.png,*.JPG, senza sottocartelle
+        n = sum(len(glob.glob(os.path.join(args.image_folder, "*" + e))) for e in (".jpg", ".png", ".JPG"))
+        if n == 0:
+            raise ValueError("At least 1 image is required")
+        print("scale frames:", args.num_scale_frames, flush=True)
     print("Building model...", flush=True); print("  Checkpoint loaded.", flush=True)
     print(f"Input: {n} frames", flush=True); print("Running streaming inference (dtype=x)...", flush=True)
     time.sleep(0.2); print("Inference done in 0.2s", flush=True)

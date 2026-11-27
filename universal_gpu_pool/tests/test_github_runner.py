@@ -731,6 +731,29 @@ class LingBotOnKaggleTest(EnvCase):
         self.assertTrue(ad.validate(ctx))
         self.assertIn("--use_sdpa", (self.out / "run.log").read_text())
 
+    def test_awkward_zip_is_prepared_so_the_model_sees_the_photos(self):
+        """Il caso reale: foto .jpeg/.PNG in sottocartelle. Senza preparazione il demo vero vede 0 immagini."""
+        import zipfile
+        with zipfile.ZipFile(Path(self.srv) / "difficile.zip", "w") as z:
+            for name in ("album/IMG_1.jpeg", "album/IMG_2.jpeg", "album/viaggio/IMG_3.PNG", "IMG_4.JPEG", "__MACOSX/album/._IMG_1.jpeg", "note.txt"):
+                z.writestr(name, b"finto")
+        ad, ctx, rec = self.run_adapter([{"id": "d", "images": self.files.base + "/difficile.zip"}])
+        self.assertTrue(rec["ok"], rec)
+        frames = json.loads((self.out / "outputs" / "camera_poses.json").read_text())["frames"]
+        self.assertEqual(len(frames), 4)
+        log = (self.out / "run.log").read_text()
+        self.assertIn("Foto pronte: 4", log)
+        self.assertIn("poche foto (4): num_scale_frames = 3", log)
+
+    def test_zip_without_photos_explains_what_it_contains(self):
+        import zipfile
+        with zipfile.ZipFile(Path(self.srv) / "vuoto.zip", "w") as z:
+            for name in ("dati/a.csv", "dati/b.csv", "leggimi.txt"):
+                z.writestr(name, b"x")
+        ad, ctx, rec = self.run_adapter([{"id": "d", "images": self.files.base + "/vuoto.zip"}])
+        self.assertFalse(rec["ok"])
+        self.assertIn("Servono almeno 3 foto", rec["error"]); self.assertIn(".csv", rec["error"])
+
     def test_failure_is_delivered_and_validates(self):
         os.environ["KAGGLE_API_TOKEN"] = "revocato"
         ad, ctx, rec = self.run_adapter([{"images": self.files.base + "/foto.zip"}])

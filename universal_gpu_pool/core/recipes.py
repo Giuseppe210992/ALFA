@@ -3,13 +3,17 @@ from pathlib import Path
 
 LINGBOT_REPO = "https://github.com/Robbyant/lingbot-map"
 RUNNER_NAME = "_gpool_lingbot_runner.py"
+PREP_NAME = "_gpool_prep_images.py"
+FRAMES_DIR = "/tmp/gpool_frames"
 WEIGHTS_CMD = ("python -c \"from huggingface_hub import hf_hub_download as h; "
                "print(h('{repo}', '{file}', local_dir='/tmp/lingbot_weights'))\"")
 
 
 def lingbot_cfg(scene, opts):
     """Config per l'adapter github_repo che esegue LingBot-Map (v1) su Kaggle con il nostro runner senza interfaccia."""
-    runner = (Path(__file__).resolve().parent.parent / "adapters" / "lingbot_map_runner.py").read_text(encoding="utf-8")
+    adapters = Path(__file__).resolve().parent.parent / "adapters"
+    runner = (adapters / "lingbot_map_runner.py").read_text(encoding="utf-8")
+    prep = (adapters / "lingbot_prep_images.py").read_text(encoding="utf-8")
     key = "video" if scene.get("video") else "images"
     ckpt = opts.get("checkpoint", "lingbot-map.pt")
     if opts.get("model_path"):
@@ -26,12 +30,15 @@ def lingbot_cfg(scene, opts):
     if key == "video":
         parts += ["--video_path", "{video}", "--fps", str(int(opts.get("fps", 10)))]
     else:
-        parts += ["--image_folder", "{images}"]
+        parts += ["--image_folder", FRAMES_DIR]
     for k, flag in (("stride", "--stride"), ("first_k", "--first_k"), ("keyframe_interval", "--keyframe_interval"),
                     ("num_scale_frames", "--num_scale_frames"), ("camera_num_iterations", "--camera_num_iterations"),
                     ("window_size", "--window_size"), ("overlap_keyframes", "--overlap_keyframes")):
         if opts.get(k) is not None:
             parts += [flag, str(int(opts[k]))]
     parts += ["--use_sdpa", "--offload_to_cpu"]       # FlashInfer non è installato su Kaggle: attenzione SDPA
-    return {"setup": setup, "run": " ".join(parts), "input_key": key, "files": {RUNNER_NAME: runner},
+    run = " ".join(parts)
+    if key == "images":      # prima si preparano le foto (il demo ufficiale ne accetta pochi formati e non guarda nelle sottocartelle)
+        run = f"python {PREP_NAME} {{images}} {FRAMES_DIR} && {run}"
+    return {"setup": setup, "run": run, "input_key": key, "files": {RUNNER_NAME: runner, PREP_NAME: prep},
             "title": "LingBot-Map (3D)", "gpu": True, "timeout_s": int(opts.get("timeout_s", 7200))}

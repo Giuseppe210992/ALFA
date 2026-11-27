@@ -98,6 +98,14 @@ def main(argv=None):
     sys.path.insert(0, repo)
     os.chdir(repo)          # demo.py cerca alcuni file (es. skyseg.onnx) relativi alla cartella corrente
 
+    # Con poche foto il demo ufficiale (8 «scale frames» di default) non funziona: si adatta il numero
+    if "--image_folder" in demo_args and "--num_scale_frames" not in demo_args:
+        folder = demo_args[demo_args.index("--image_folder") + 1]
+        n = len([f for f in os.listdir(folder) if f.lower().endswith((".jpg", ".png"))]) if os.path.isdir(folder) else 0
+        if 0 < n < 9:
+            demo_args = demo_args + ["--num_scale_frames", str(max(1, n - 1))]
+            print("[runner] poche foto (%d): num_scale_frames = %d" % (n, max(1, n - 1)), flush=True)
+
     state = {"saved": False}
     # Pacchetto `lingbot_map.vis` "finto": non esegue il suo __init__ (che importa viser, non
     # necessario qui) ma lascia importabili i suoi sottomoduli reali, es. glb_export.

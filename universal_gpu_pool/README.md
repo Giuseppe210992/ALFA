@@ -54,7 +54,7 @@ Il token di accesso è in `config/local_config.yaml`. Nessuno dei due file va co
 
 ## Test
 
-    python run_tests.py          # 96 test (backend API, router, worker, webapp via HTTP) + demo originali
+    python run_tests.py          # 104 test (backend API, router, worker, webapp via HTTP) + demo originali
     python run_tests.py --e2e    # + test nel browser su una copia pulita (Node + Playwright)
 
 I test usano un finto server OpenAI (`tests/fake_openai.py`): nessuna rete, nessuna chiave reale.
@@ -116,6 +116,9 @@ mandami il messaggio. Per provare l'account reale: `KAGGLE_API_TOKEN_REAL=<token
 Dalla webapp: **«Ricostruzione 3D»** → incolla il link del video (o di uno **ZIP** di foto) → Avvia. Gira su una GPU gratuita
 di Kaggle (serve l'account Kaggle collegato), non richiede nodi nel pool. I link copiati da **Google Drive**
 («Chiunque abbia il link») e **Dropbox** vengono convertiti da soli in link diretti; le cartelle di Drive non si possono scaricare (crea uno ZIP).
+Le foto vengono **preparate prima del modello**: il `demo.py` ufficiale di LingBot cerca solo `*.jpg`, `*.png`, `*.JPG` senza guardare nelle
+sottocartelle (foto `.jpeg`/`.PNG`/`.webp` o ZIP con cartelle risultavano «0 immagini»). Il passo di preparazione le trova ovunque, le ordina,
+corregge la rotazione dei telefoni e riduce quelle enormi; se non ne trova dice cosa contiene lo ZIP. Servono almeno 3 foto (meglio 20+, con molta sovrapposizione).
 Su Kaggle FlashInfer non c'è: si usa l'attenzione SDPA (più lenta ma equivalente). Non verificato su Kaggle reale: compatibilità
 della versione di PyTorch di Kaggle con LingBot-Map. Qui sotto, il funzionamento con nodi GPU propri (runtime «pool»).
 
