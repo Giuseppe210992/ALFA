@@ -72,6 +72,17 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
     // 1. login automatico dal link del terminale
     await page.goto(loginUrl);
     await page.waitForSelector('#view-app:not(.hide)', { timeout: 10000 });
+    // App installabile: manifest collegato; un finto «beforeinstallprompt» mostra il banner e il clic chiama prompt()
+    assert(await page.locator('link[rel=manifest]').count() === 1, 'PWA: manifest collegato alla pagina');
+    await page.evaluate(() => {
+      window.__prompted = false;
+      const ev = new Event('beforeinstallprompt'); ev.prompt = () => { window.__prompted = true; return Promise.resolve(); };
+      window.dispatchEvent(ev);
+    });
+    await page.waitForSelector('#install-banner:not(.hide)');
+    await page.click('#btn-install');
+    assert(await page.evaluate(() => window.__prompted) === true, 'PWA: «Installa» apre il prompt del browser');
+    await page.waitForSelector('#install-banner.hide', { state: 'attached' });
     assert(!page.url().includes('#t='), 'il token viene tolto dalla barra degli indirizzi');
     await page.waitForSelector('#conn-txt:has-text("Connesso")');
     // 2. senza account: il pannello si apre da solo

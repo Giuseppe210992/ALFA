@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0b0f19">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="GPU Pool">
 <title>GPU Pool — Assistente modelli</title>
 <style>
 :root{
@@ -222,6 +229,14 @@ details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
         <span class="muted">Basta una chiave API gratuita (Groq, Cerebras o Google Gemini). Ci vogliono 2 minuti.</span>
       </div>
       <button class="btn warn" id="btn-onboard">Collega account</button>
+    </div>
+
+    <!-- installa come app (icona sulla schermata Home) -->
+    <div class="banner hide" id="install-banner">
+      <div><b>📲 Metti l'icona sulla schermata Home</b>
+        <span class="muted">Si apre con un tocco, a schermo intero, come una vera app.</span></div>
+      <div class="row"><button class="btn" id="btn-install">Installa</button>
+        <button class="btn ghost sm" id="btn-install-x" aria-label="Chiudi">✕</button></div>
     </div>
 
     <!-- TELEFONO -->
@@ -1149,7 +1164,7 @@ async function openPhone(open) {
     body.innerHTML = `<p style="margin-top:0">Questa copia è su internet: funziona da qualsiasi posto e a PC spento. Per aprirla su un <b>altro dispositivo</b> usa questo link personale
       (contiene il tuo codice di accesso: <b>non condividerlo</b>):</p>
       <div class="keyrow" style="display:flex;gap:8px"><input type="text" id="phone-link" readonly style="flex:1" value="${escapeHtml(link)}"><button class="btn sm" id="phone-copy">Copia</button></div>
-      <p class="small" style="margin-top:10px">Consiglio: salvalo nei preferiti del browser o aggiungi la pagina alla schermata Home.</p>`;
+      ${installHelp()}`;
     $('#phone-copy').onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copiato'); } catch { $('#phone-link').select(); toast('Selezionato: copialo a mano'); } };
     return;
   }
@@ -1176,6 +1191,34 @@ async function openPhone(open) {
     try { await navigator.clipboard.writeText(link); toast('Indirizzo copiato'); }
     catch { $('#phone-link').select(); toast('Selezionato: copialo a mano'); }
   };
+}
+/* ---------------- App installabile (icona Home) ---------------- */
+let installEvt = null;
+const isStandalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+function showInstall() {
+  const b = $('#install-banner');
+  if (b) b.classList.toggle('hide', !installEvt || isStandalone() || lsGet('pool_install_x') === '1');
+}
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; showInstall(); });
+window.addEventListener('appinstalled', () => { installEvt = null; showInstall(); toast('Installata! Cerca «GPU Pool» tra le app'); });
+$('#btn-install').onclick = async () => {
+  if (!installEvt) return;
+  const ev = installEvt; installEvt = null; showInstall();
+  try { await ev.prompt(); } catch (e) {}
+};
+$('#btn-install-x').onclick = () => { lsSet('pool_install_x', '1'); $('#install-banner').classList.add('hide'); };
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+function installHelp() {
+  if (isStandalone()) return '<p class="small" style="margin-top:10px">✅ Stai già usando l\'app installata.</p>';
+  return `<div style="margin-top:10px"><b>📲 Icona sulla schermata Home</b>
+    <ul class="steps-list small" style="margin:6px 0 0">
+    <li><b>Android (Chrome):</b> ⋮ in alto a destra → <b>Installa app</b> (o «Aggiungi a schermata Home»).</li>
+    <li><b>iPhone (Safari):</b> tasto Condividi ⬆ → <b>Aggiungi alla schermata Home</b>.</li></ul>
+    <p class="small" style="margin:6px 0 0">Fallo dall'indirizzo <b>stabile</b> (Hugging Face): quello di Codespaces cambia a ogni riavvio.</p></div>`;
 }
 $('#btn-phone').onclick = () => openPhone($('#phone-card').classList.contains('hide'));
 $('#btn-phone-close').onclick = () => openPhone(false);

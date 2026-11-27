@@ -12,6 +12,11 @@ pinned: false
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Giuseppe210992/ALFA/tree/claude/new-session-q8o2nc?quickstart=1)
 
+> 📲 **Icona sulla schermata Home:** dal telefono, a app aperta, usa il banner **«Installa»** (Android) oppure
+> Safari → Condividi → *Aggiungi alla schermata Home* (iPhone). Da quel momento si apre con un tocco, a schermo intero.
+> L'icona funziona bene con un **indirizzo stabile** (copia su Hugging Face, vedi `deploy/huggingface/LEGGIMI.md`):
+> l'indirizzo di Codespaces cambia a ogni riavvio.
+
 Funziona da **telefono o computer**:
 
 1. **Tocca il pulsante** e accedi con il tuo account GitHub (gratuito: basta l'email, nessuna carta).

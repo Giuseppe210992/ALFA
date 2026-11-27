@@ -16,6 +16,17 @@ _LEGACY = Path(__file__).with_name("status_page.html")
 PAGE = _WEBAPP if _WEBAPP.exists() else _LEGACY
 
 
+# File pubblici dell'app installabile (nessun dato: solo icone, manifest e service worker)
+_STATIC = {
+    "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json; charset=utf-8", "no-cache"),
+    "/sw.js": ("sw.js", "text/javascript; charset=utf-8", "no-cache"),
+    "/icon-192.png": ("icon-192.png", "image/png", "public, max-age=86400"),
+    "/icon-512.png": ("icon-512.png", "image/png", "public, max-age=86400"),
+    "/icon-maskable-512.png": ("icon-maskable-512.png", "image/png", "public, max-age=86400"),
+    "/favicon.ico": ("icon-192.png", "image/png", "public, max-age=86400"),
+}
+
+
 class BadRequest(Exception):
     """Richiesta non valida: diventa un 400 con messaggio leggibile."""
 
@@ -855,8 +866,12 @@ def make_server(router, host, port):
             u = urlparse(self.path)
             if method == "GET" and u.path in ("/", "/ui", "/index.html"):   # pagina statica: i dati richiedono il token
                 return self._send_raw(200, PAGE.read_bytes(), "text/html; charset=utf-8")
-            if method == "GET" and u.path == "/favicon.ico":
-                return self._send_raw(204, b"", "image/x-icon")
+            if method == "GET" and u.path in _STATIC:                      # app installabile: file pubblici, senza token
+                name, ctype, cache = _STATIC[u.path]
+                f = _WEBAPP.parent / name
+                if f.exists():
+                    return self._send_raw(200, f.read_bytes(), ctype, cache=cache)
+                return self._send_raw(204 if u.path == "/favicon.ico" else 404, b"", ctype)
             who = self.client_address[0]
             if router.cfg.get("trust_proxy"):
                 who = (self.headers.get("X-Forwarded-For") or who).split(",")[0].strip() or who
@@ -949,11 +964,11 @@ def make_server(router, host, port):
                         break
                     self.wfile.write(chunk)
 
-        def _send_raw(self, code, data, ctype):
+        def _send_raw(self, code, data, ctype, cache="no-store"):
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", cache)
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "no-referrer")
             self.end_headers()
