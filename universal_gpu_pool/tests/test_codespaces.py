@@ -51,6 +51,10 @@ class DevcontainerTest(unittest.TestCase):
         self.assertEqual(c["forwardPorts"], [8765])
         self.assertEqual(c["portsAttributes"]["8765"]["onAutoForward"], "openBrowser")
         self.assertIn("avvia-codespaces.sh", c["postStartCommand"])
+        vs = c["customizations"]["vscode"]["settings"]
+        self.assertEqual(vs["workbench.editorAssociations"]["*.md"], "vscode.markdown.preview.editor",
+                         "i file .md si aprono formattati (con link toccabili), non come codice")
+        self.assertIn("universal_gpu_pool/APRI-L-APP.md", c["customizations"]["codespaces"]["openFiles"])
         self.assertTrue((REPO / c["postStartCommand"].split()[-1]).is_file())
         for f in c["customizations"]["codespaces"]["openFiles"]:
             self.assertTrue((REPO / f).is_file(), f)
@@ -91,6 +95,10 @@ class CodespacesRunTest(unittest.TestCase):
         r = self.run_script()
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn(f"https://testcs-{self.port}.app.github.dev/", r.stdout)
+        page = (self.app / "APRI-L-APP.md").read_text()
+        self.assertIn(f"[TOCCA QUI PER APRIRE L'APP](https://testcs-{self.port}.app.github.dev/)", page,
+                      "la pagina che si apre da sola contiene un solo grande link")
+        self.assertNotIn("Sto avviando", page)
         self.assertEqual(call(self.port, "/claim/status")[1], {"claimed": False, "public": True})
         self.assertEqual(call(self.port, "/claim", {"secret": TOKEN})[0], 200)
         code, s = call(self.port, "/settings", token=TOKEN)

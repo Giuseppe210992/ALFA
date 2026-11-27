@@ -16,8 +16,8 @@ Funziona da **telefono o computer**:
 
 1. **Tocca il pulsante** e accedi con il tuo account GitHub (gratuito: basta l'email, nessuna carta).
 2. GitHub prepara per te un piccolo computer in cloud (1-2 minuti) e **avvia l'app da solo**.
-3. Quando compare «*porta 8765 disponibile*» tocca **Open in Browser** (oppure scheda **PORTE** → icona del globo 🌐):
-   si apre il sito, che **si attiva da solo**.
+3. Si apre una pagina con un **grande link 👉 «TOCCA QUI PER APRIRE L'APP»**: toccalo (se chiede conferma, tocca *Apri*).
+   Il sito si apre e **si attiva da solo**. *(Se vedi solo righe di codice, apri il file `APRI-L-APP.md`.)*
 4. Il sito ti guida: collega **Kaggle** (circa 30 ore di GPU gratis a settimana) e scegli cosa fare. Fine.
 
 Costo: **zero**. GitHub regala a ogni account circa **60 ore al mese** di questo computer in cloud: quando non lo usi, spegnilo

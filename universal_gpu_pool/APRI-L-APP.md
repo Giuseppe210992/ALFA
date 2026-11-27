@@ -1,0 +1,3 @@
+# ⏳ Sto avviando l'app…
+
+Aspetta **1-2 minuti**: questa pagina si aggiorna da sola e comparirà un **grande link** da toccare.

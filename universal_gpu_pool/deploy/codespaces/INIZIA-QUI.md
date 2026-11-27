@@ -1,4 +1,9 @@
-# ✅ Ci sei quasi — 3 tocchi
+# ✅ Ci sei quasi
+
+**Dal telefono, la strada più semplice:** apri il file **`APRI-L-APP.md`** (in `universal_gpu_pool`) e tocca il grande link 👉.
+Se invece vedi solo righe di codice: scorri la lista dei file a sinistra, tocca `APRI-L-APP.md` e poi l'icona dell'anteprima.
+
+**Strada alternativa (3 tocchi):**
 
 1. Cerca la scheda **PORTE** (in inglese **PORTS**, in basso: sul telefono potrebbe stare nel menu ☰ → *View* → *Ports*).
 2. Sulla riga **8765 · GPU Pool** tocca l'**icona del globo 🌐** (*Open in Browser*).

@@ -14,6 +14,24 @@ for _ in $(seq 1 40); do
   sleep 1
 done
 URL="https://${CODESPACE_NAME:-codespace}-${PORT}.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}/"
+# Pagina «formattata» con UN grande link: sul telefono l'editor di GitHub è inutilizzabile, qui basta un tocco.
+cat > APRI-L-APP.md <<MD
+# ✅ L'app è pronta
+
+## 👉 [TOCCA QUI PER APRIRE L'APP](${URL})
+
+Se il telefono chiede conferma di aprire un sito esterno, tocca **Apri**.
+
+Nel sito: collega **Kaggle** quando te lo chiede e sei pronto. Si attiva da solo.
+
+---
+
+Se il link non si apre, copia questo indirizzo nel browser:
+
+\`${URL}\`
+
+*Non rendere pubblica la porta 8765. Quando hai finito, spegni il codespace da github.com/codespaces (⋯ → Stop codespace).*
+MD
 echo ""
 echo "  ✅ GPU Pool è pronto."
 echo "  Apri questo indirizzo:  ${URL}"
