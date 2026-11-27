@@ -235,6 +235,7 @@ details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
           <button class="btn ghost sm" id="kg-test">Verifica e aggiorna ore GPU</button>
           <button class="btn ghost sm" id="kg-del">Scollega</button>
         </div>
+        <div class="muted small" id="kg-scope" style="margin-top:6px"></div>
         <div class="out" id="kg-out"></div>
         <div class="muted small" style="margin-top:6px">Il token resta solo su questo computer. I programmi che avvii girano nel <b>tuo</b> account Kaggle: avvia solo progetti di cui ti fidi.</div>
       </div>
@@ -798,6 +799,8 @@ function renderGpu() {
     : '<span class="tag">Non collegato</span>';
   $('#kg-quota').innerHTML = k.connected && k.quota
     ? 'GPU rimaste questa settimana: <b>' + k.quota.gpu_left_h + ' h</b> su ' + k.quota.gpu_total_h + ' h' : '';
+  $('#kg-quota').title = k.scope ? 'Permessi del token: ' + k.scope : '';
+  $('#kg-scope').textContent = k.connected && k.scope ? 'Permessi del token: ' + k.scope : '';
   $('#kg-steps').classList.toggle('hide', !!k.connected);
   $('#kg-connected-actions').classList.toggle('hide', !k.connected);
 }

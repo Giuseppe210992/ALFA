@@ -20,7 +20,8 @@ USERS = {"good-token": "tester"}
 
 
 class FakeKaggle:
-    def __init__(self, no_phone=False, queue_s=0.3, page_size=4, timeout_kill=None, port=0, unzip=True, dataset_delay=0.3):
+    def __init__(self, no_phone=False, queue_s=0.3, page_size=4, timeout_kill=None, port=0, unzip=True, dataset_delay=0.3, deny_datasets=False):
+        self.deny_datasets = deny_datasets
         self.no_phone, self.queue_s, self.page_size = no_phone, queue_s, page_size
         self.unzip, self.dataset_delay = unzip, dataset_delay        # unzip: Kaggle estrae gli ZIP dei dataset
         self.blobs, self.datasets, self.puts = {}, {}, []
@@ -91,6 +92,8 @@ class FakeKaggle:
                 if (svc, method) == ("security.OAuthService", "IntrospectToken"):
                     u = USERS.get(body.get("token"))
                     return self._send(200, {"active": bool(u), "username": u or ""})
+                if fake.deny_datasets and svc in ("blobs.BlobApiService", "datasets.DatasetApiService"):
+                    return self._send(403, {"code": 403, "message": "Permission 'datasets.create' denied"})
                 if (svc, method) == ("blobs.BlobApiService", "StartBlobUpload"):
                     assert body.get("type") == "DATASET" and body.get("name") and body.get("contentLength") > 0
                     tok = "tok" + str(len(fake.blobs) + 1) + os.urandom(3).hex()

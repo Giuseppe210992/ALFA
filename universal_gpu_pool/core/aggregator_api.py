@@ -516,6 +516,7 @@ class Router:
         connected = KaggleClient.configured()
         c = self._gpu_cache if connected else {}
         return {"kaggle": {"connected": connected, "username": c.get("username"), "quota": c.get("quota"),
+                           "scope": c.get("scope", ""),
                            "checked": c.get("checked"), "error": c.get("error", "")},
                 "colab": {"automatable": False}}
 
@@ -530,7 +531,8 @@ class Router:
                 quota = None          # la quota è un di più: l'account funziona anche senza
         except KaggleError as e:
             raise BadRequest(str(e))
-        self._gpu_cache = {"username": user, "quota": quota, "checked": time.time(), "error": ""}
+        self._gpu_cache = {"username": user, "quota": quota, "checked": time.time(), "error": "",
+                           "scope": getattr(client, "scope", "")}
         return user
 
     def set_kaggle(self, body):

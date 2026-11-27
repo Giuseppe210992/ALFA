@@ -888,6 +888,37 @@ class UploadTest(EnvCase):
             os.environ["GPOOL_KAGGLE_API"] = self.kaggle.base
             k2.stop()
 
+    def test_403_on_dataset_is_not_blamed_on_the_phone(self):
+        """Il caso reale: 403 sulle chiamate dei dataset. Non va attribuito alla verifica del telefono."""
+        k2 = FakeKaggle(deny_datasets=True).start()
+        os.environ["GPOOL_KAGGLE_API"] = k2.base
+        try:
+            up = self.save("dati.txt", b"uno\ndue\n")
+            rec = UploadTest.__dict__["run_repo"](self, up["id"])
+            self.assertFalse(rec["ok"])
+            self.assertIn("creare un dataset", rec["error"]); self.assertIn("StartBlobUpload", rec["error"])
+            self.assertIn("Permission", rec["error"]); self.assertIn("LINK", rec["error"])
+            self.assertNotIn("telefono", rec["error"])
+            self.assertEqual(k2.kernels, {}, "senza il file non si deve nemmeno lanciare il notebook")
+            c = KaggleClient(token="good-token", base=k2.base)
+            with self.assertRaises(KaggleError) as cm:
+                c.call("kernels.KernelsApiService", "SaveKernel", {})        # 400 del finto, non 403: nessuna frase sul telefono
+            self.assertNotIn("telefono", str(cm.exception))
+        finally:
+            os.environ["GPOOL_KAGGLE_API"] = self.kaggle.base
+            k2.stop()
+
+    def test_notebook_403_mentions_phone_and_method(self):
+        k2 = FakeKaggle(no_phone=True).start()
+        try:
+            c = KaggleClient(token="good-token", base=k2.base)
+            with self.assertRaises(KaggleError) as cm:
+                c.push_script("GPool abc12345", "print(1)")
+            self.assertIn("telefono", str(cm.exception)); self.assertIn("SaveKernel", str(cm.exception))
+            self.assertEqual((cm.exception.code, cm.exception.method), (403, "SaveKernel"))
+        finally:
+            k2.stop()
+
     def test_kaggle_rejecting_the_file_cleans_up(self):
         k2 = FakeKaggle(dataset_delay=0.1).start()
         os.environ["GPOOL_KAGGLE_API"] = k2.base

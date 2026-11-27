@@ -26,7 +26,9 @@ _STATUS_BY_NUM = {0: "QUEUED", 1: "RUNNING", 2: "COMPLETE", 3: "ERROR", 4: "CANC
 
 
 class KaggleError(RuntimeError):
-    pass
+    def __init__(self, msg, code=0, method=""):
+        super().__init__(msg)
+        self.code, self.method = code, method
 
 
 def _secs(v):
@@ -53,6 +55,7 @@ class KaggleClient:
         if not (self.token or (self.username and self.key)):
             raise KaggleError("Account Kaggle non collegato. Apri «Account e chiavi» → «GPU» e incolla il token.")
         self._user = self.username or None
+        self.scope = ""
 
     @classmethod
     def from_env(cls):
@@ -76,10 +79,10 @@ class KaggleClient:
         try:
             return netutil.post_json(url, payload or {}, headers=self._auth(), timeout=timeout, retries=retries)
         except netutil.NetError as e:
-            raise KaggleError(self._explain(e)) from None
+            raise KaggleError(self._explain(e, service, method), code=e.code, method=method) from None
 
     @staticmethod
-    def _explain(e):
+    def _explain(e, service="", method=""):
         msg = ""
         try:
             import json
@@ -88,14 +91,22 @@ class KaggleClient:
             msg = (e.body or "").strip()[:200]
         if e.code == 401:
             return "Kaggle non ti riconosce: token errato, scaduto o revocato. Generane uno nuovo su kaggle.com/settings/api."
+        where = f" [chiamata: {service.split('.')[-1]}/{method}]" if method else ""
+        if e.code == 403 and method in ("StartBlobUpload", "CreateDataset", "GetDatasetStatus", "DeleteDataset"):
+            return ("Kaggle non permette a questo token di creare un dataset" + (f" ({msg})" if msg else "") + where +
+                    ". Cause probabili: il token ha permessi limitati (genera un nuovo token su kaggle.com/settings/api e "
+                    "ricollegalo), oppure l'account non può creare dataset. Per ora usa un LINK al file (Dropbox, Drive) "
+                    "invece di trascinarlo.")
+        if e.code == 403 and method == "SaveKernel":
+            return ("Kaggle ha negato l'avvio del notebook" + (f" ({msg})" if msg else "") + where +
+                    ". Controlla di aver verificato il numero di telefono su kaggle.com → Settings → Phone verification "
+                    "(senza, GPU e internet nei notebook sono disattivati) e di non aver superato i limiti dell'account.")
         if e.code == 403:
-            return ("Kaggle ha negato l'accesso" + (f" ({msg})" if msg else "") +
-                    ". Controlla di aver verificato il numero di telefono su kaggle.com → Settings → Phone verification: "
-                    "senza, GPU e internet nei notebook sono disattivati.")
+            return "Kaggle ha negato l'accesso" + (f" ({msg})" if msg else "") + where + "."
         if e.code == 429:
             return "Kaggle: troppe richieste, riprova tra qualche minuto."
         if e.code:
-            return f"Kaggle ha risposto {e.code}" + (f": {msg}" if msg else "")
+            return f"Kaggle ha risposto {e.code}" + (f": {msg}" if msg else "") + where
         return f"Impossibile contattare Kaggle: {e}"
 
     # ---------- account ----------
@@ -107,6 +118,7 @@ class KaggleClient:
         if not r.get("active") or not r.get("username"):
             raise KaggleError("Token Kaggle non valido o scaduto. Generane uno nuovo su kaggle.com/settings/api.")
         self._user = r["username"]
+        self.scope = str(r.get("scope") or "")
         return self._user
 
     def quota(self):
