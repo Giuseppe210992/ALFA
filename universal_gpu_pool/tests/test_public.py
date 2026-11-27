@@ -72,8 +72,8 @@ class PublicModeTest(unittest.TestCase):
                 time.sleep(0.2)
         self.fail("il server non è partito")
 
-    def test_refuses_to_start_without_strong_secret(self):
-        for env in ({}, {"GPOOL_TOKEN": "corto"}, {"GPOOL_TOKEN": "change-me"}):
+    def test_refuses_weak_secret(self):
+        for env in ({"GPOOL_TOKEN": "corto"}, {"GPOOL_TOKEN": "change-me"}):
             p, port = self.start(env)
             out, _ = p.communicate(timeout=20)
             self.assertEqual(p.returncode, 2, (env, out))
@@ -114,6 +114,88 @@ class PublicModeTest(unittest.TestCase):
             for _ in range(5):
                 get(port, "/status", token="sbagliato", xff="192.0.2.1")
             self.assertEqual(get(port, "/status", token=TOKEN, xff="192.0.2.1")[0], 200)
+
+
+def post(port, path, body, xff=None):
+    h = {"Content-Type": "application/json"}
+    if xff:
+        h["X-Forwarded-For"] = xff
+    req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=json.dumps(body).encode(), headers=h, method="POST")
+    try:
+        with OPENER.open(req, timeout=10) as r:
+            return r.status, json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b"{}")
+
+
+class ClaimTest(PublicModeTest):
+    """Istanza «da attivare»: nessun segreto da impostare, il primo dispositivo la attiva con un proprio codice."""
+
+    def up(self):
+        p, port = self.start({})
+        self.wait_up(p, port)
+        return p, port
+
+    def test_unclaimed_instance_is_closed_until_claimed(self):
+        p, port = self.up()
+        self.assertEqual(get(port, "/claim/status")[1], {"claimed": False, "public": True})
+        for tok in ("", "x" * 40, "undefined"):
+            self.assertEqual(get(port, "/status", token=tok)[0], 401, "prima dell'attivazione nessun codice apre l'API")
+        self.assertEqual(post(port, "/claim", {"secret": "corto"})[0], 400)
+        self.assertEqual(post(port, "/claim", {"secret": "con spazi " + "x" * 30})[0], 400)
+        self.assertEqual(post(port, "/claim", {})[0], 400)
+        self.assertEqual(get(port, "/claim/status")[1]["claimed"], False, "i tentativi non validi non attivano")
+        self.assertEqual(post(port, "/claim", {"secret": TOKEN})[0], 200)
+        self.assertEqual(get(port, "/claim/status")[1], {"claimed": True, "public": True})
+        self.assertEqual(get(port, "/status")[0], 200)
+        self.assertEqual(get(port, "/status", token="x" * 40)[0], 401)
+
+    def test_second_claim_is_refused_and_throttled(self):
+        p, port = self.up()
+        self.assertEqual(post(port, "/claim", {"secret": TOKEN})[0], 200)
+        code, r = post(port, "/claim", {"secret": "A" * 40})
+        self.assertEqual(code, 409); self.assertIn("già stata attivata", r["error"])
+        self.assertEqual(get(port, "/status", token="A" * 40)[0], 401, "il secondo codice non vale")
+        self.assertEqual(get(port, "/status")[0], 200, "il primo continua a funzionare")
+        for _ in range(8):
+            post(port, "/claim", {"secret": "B" * 40}, xff="198.51.100.5")
+        self.assertEqual(post(port, "/claim", {"secret": "B" * 40}, xff="198.51.100.5")[0], 429)
+
+    def test_restart_same_device_reclaims_and_attacker_first_is_locked_out(self):
+        p, port = self.up()
+        self.assertEqual(post(port, "/claim", {"secret": TOKEN})[0], 200)
+        p.kill(); p.wait()
+        # riavvio: il server è di nuovo «da attivare»; il telefono dell'utente ripresenta lo stesso codice
+        p2, _ = self.start({}, port=port)
+        self.wait_up(p2, port)
+        self.assertEqual(get(port, "/status")[0], 401)
+        self.assertEqual(post(port, "/claim", {"secret": TOKEN})[0], 200)
+        self.assertEqual(get(port, "/status")[0], 200, "stesso codice: l'utente rientra senza fare nulla")
+        # secondo riavvio, ma stavolta un estraneo arriva per primo
+        p2.kill(); p2.wait()
+        p3, _ = self.start({}, port=port)
+        self.wait_up(p3, port)
+        self.assertEqual(post(port, "/claim", {"secret": "Z" * 40})[0], 200)
+        self.assertEqual(get(port, "/status", token=TOKEN)[0], 401, "il telefono dell'utente NON entra: non deve mandargli i suoi segreti")
+        self.assertEqual(get(port, "/gpu", token=TOKEN)[0], 401)
+
+    def test_env_secret_still_wins_and_is_not_claimable(self):
+        p, port = self.start({"GPOOL_TOKEN": TOKEN})
+        self.wait_up(p, port)
+        self.assertEqual(get(port, "/claim/status")[1]["claimed"], True)
+        self.assertEqual(post(port, "/claim", {"secret": "Q" * 40})[0], 409)
+        self.assertEqual(get(port, "/status", token=TOKEN)[0], 200)
+
+    def test_local_pc_mode_unaffected(self):
+        """Senza modo pubblico (il tuo PC) non esiste nessuna attivazione: il token sta nel file di configurazione."""
+        port = free_port()
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("GPOOL_", "SPACE_"))}
+        p = subprocess.Popen([sys.executable, "run_webapp.py", "--port", str(port), "--no-browser"], cwd=self.app, env=env,
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        self.procs.append(p)
+        self.wait_up(p, port)
+        self.assertEqual(get(port, "/claim/status")[1], {"claimed": True, "public": False})
+        self.assertEqual(post(port, "/claim", {"secret": TOKEN})[0], 409)
 
 
 class ThrottleUnitTest(unittest.TestCase):

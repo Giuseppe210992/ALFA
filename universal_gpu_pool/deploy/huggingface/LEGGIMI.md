@@ -1,30 +1,30 @@
-# Usarlo da qualsiasi posto, gratis e senza carta: Hugging Face Spaces
+# Copia personale gratuita su Hugging Face Spaces (senza carta)
 
-Così il programma gira su un server di Hugging Face invece che sul tuo PC: dal telefono funziona ovunque
-(anche con la rete dati) e il PC può restare spento. Serve solo un indirizzo email: nessuna carta di pagamento.
+Così il programma gira su un server di Hugging Face: dal telefono funziona ovunque e il PC può restare spento.
 
-## Cosa devi sapere prima
-- **Il disco si azzera a ogni riavvio** del server. Scarica i risultati appena sono pronti. Le chiavi vanno nei **Secrets** (passo 5), non nel pannello «Account e chiavi».
-- Se resta **inattivo a lungo** va in pausa: alla prima visita si risveglia (circa un minuto).
-- Se si riavvia **mentre un lavoro è in corso**, il lavoro continua su Kaggle ma la webapp perde il filo: i file restano nel tuo account Kaggle (kaggle.com → Code → il notebook «GPool …» → Output).
-- L'indirizzo del server è pubblico: lo protegge il **codice segreto** (passo 5). Usane uno lungo e non condividerlo.
-- Non l'ho potuto provare su Hugging Face vero (da qui non è raggiungibile): se un passo non torna, mandami cosa vedi.
+## Per chi lo usa (3 minuti)
+Dal README di GitHub tocca il pulsante **«Duplicate this Space»** e segui i 5 passi: non servono segreti né password.
+La copia **si attiva da sola** la prima volta che la apri: il tuo dispositivo genera un codice casuale e lo usa come chiave di accesso
+(lo vedi, se vuoi, in «📱 Telefono» come link personale). Poi collega Kaggle dall'app.
 
-## Passi (non serve il terminale)
-1. **Account**: crea un account gratuito su https://huggingface.co/join (basta l'email).
-2. **ATTENZIONE alle chiavi**: scarica da GitHub uno **ZIP nuovo** del progetto (Code → Download ZIP) ed estrailo.
-   **Non usare la cartella con cui lavori sul PC**: contiene `config/secrets.env` con le tue chiavi, e su un server pubblico si vedrebbero.
-   (Se per errore le carichi, il programma le cancella all'avvio, ma resterebbero visibili nella cronologia: in quel caso revocale e creane di nuove.)
-3. **Crea il Space**: https://huggingface.co/new-space → Nome `gpu-pool` · SDK **Docker** → *Blank* · Hardware **CPU basic · FREE** · Visibilità **Public** → *Create Space*.
-4. **Carica i file**: scheda *Files* → *Add file* → *Upload files* → trascina **tutto il contenuto** della cartella `universal_gpu_pool`
-   (compresi `Dockerfile` e `README.md`, che sostituisce quello creato) → *Commit changes*.
-5. **Segreti**: scheda *Settings* → *Variables and secrets* → *New secret*:
-   | Nome | Valore |
-   |---|---|
-   | `GPOOL_TOKEN` | il codice segreto: generalo dalla webapp sul PC → pulsante «📱 Telefono» → «Genera codice segreto» (almeno 24 caratteri) |
-   | `KAGGLE_API_TOKEN` | il tuo token di kaggle.com/settings/api |
-   | `GROQ_API_KEY` *(facoltativo)* | la chiave Groq (o `CEREBRAS_API_KEY`, `GEMINI_API_KEY`) per l'analisi dei progetti e le domande |
-6. **Attendi** 2-5 minuti: in alto lo stato passa da *Building* a *Running*.
-7. **Apri** `https://NOMEUTENTE-gpu-pool.hf.space/#t=IL_TUO_CODICE` sul telefono (il tuo nome utente al posto di `NOMEUTENTE`) e aggiungilo ai preferiti / alla schermata Home.
+- Il server gratuito **dimentica tutto quando si riavvia o va in pausa**: il tuo telefono ricorda token Kaggle e chiavi (solo nel browser)
+  e le rimette da solo alla prima apertura. Scarica comunque i risultati appena sono pronti: i file sul server non sono permanenti.
+- Se qualcuno aprisse l'indirizzo **prima di te** dopo un riavvio, attiverebbe lui l'istanza: il tuo telefono non entrerebbe
+  e **non gli manderebbe nessun segreto**. In quel caso: Settings → *Restart this Space* e riaprilo subito.
+- Per un'istanza «bloccata» che non si può attivare da altri: in Settings → *Variables and secrets* aggiungi il segreto `GPOOL_TOKEN`
+  (24+ caratteri; generalo da «📱 Telefono → Genera codice segreto») e apri l'app con `https://…hf.space/#t=IL_CODICE`.
 
-Se sbagli il codice 8 volte di fila, l'accesso si blocca per 10 minuti (protezione contro i tentativi a caso).
+## Per chi pubblica il progetto (una volta sola, 5 minuti)
+Il pulsante del README funziona solo se esiste un Space «modello» pubblico, creato da te:
+1. Su https://huggingface.co/new-space: nome `gpu-pool`, SDK **Docker → Blank**, hardware **CPU basic (FREE)**, visibilità **Public**.
+2. *Files → Add file → Upload files*: trascina il contenuto di una copia **nuova** di `universal_gpu_pool` (da ZIP appena scaricato, non la cartella di lavoro:
+   contiene le tue chiavi). Il programma cancella comunque `secrets.env`/`local_config.yaml` all'avvio, ma resterebbero nella cronologia.
+3. *Settings → Variables and secrets → New secret*: `GPOOL_TOKEN` = un codice lungo qualsiasi (almeno 24 caratteri) **che non userai**: serve a
+   impedire che qualcuno attivi il modello. Le copie non ereditano i segreti.
+4. Nel `README.md` di GitHub sostituisci `TUO_UTENTE_HF` con il tuo nome utente di Hugging Face.
+
+## Limiti onesti
+- Non provato su Hugging Face vero (da qui non è raggiungibile) e l'immagine Docker non è stata costruita nell'ambiente di sviluppo.
+- Dopo molta inattività il server va in pausa e si risveglia alla prima visita (circa un minuto).
+- Se si riavvia **durante un lavoro**, il lavoro continua su Kaggle ma l'app perde il filo: i file restano nel tuo account Kaggle (Output del notebook «GPool …»).
+- Dopo 8 codici sbagliati l'accesso si blocca per 10 minuti.

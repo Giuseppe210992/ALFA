@@ -841,7 +841,8 @@ def make_server(router, host, port):
     throttle = LoginThrottle(int(router.cfg.get("auth_max_failures", 8)), 600, int(router.cfg.get("auth_lock_s", 600)))
 
     def token_ok(got):
-        return bool(got) and hmac.compare_digest(str(got).encode(), str(router.cfg["token"]).encode())
+        want = str(router.cfg.get("token") or "")
+        return bool(got) and bool(want) and hmac.compare_digest(str(got).encode(), want.encode())
 
     class H(BaseHTTPRequestHandler):
         server_version = "GPUPool/1.1"
@@ -859,6 +860,32 @@ def make_server(router, host, port):
             who = self.client_address[0]
             if router.cfg.get("trust_proxy"):
                 who = (self.headers.get("X-Forwarded-For") or who).split(",")[0].strip() or who
+            if method == "GET" and u.path == "/claim/status":          # pubblico: serve alla pagina per sapere cosa fare
+                return self._send(200, {"claimed": not router.cfg.get("unclaimed"),
+                                        "public": bool(router.cfg.get("trust_proxy"))})
+            if method == "POST" and u.path == "/claim":                # attivazione: il primo dispositivo imposta il proprio codice
+                wait = throttle.blocked(who)
+                if wait:
+                    return self._send(429, {"error": "Troppi tentativi: riprova tra qualche minuto."})
+                try:
+                    n = int(self.headers.get("Content-Length") or 0)
+                    body = json.loads(self.rfile.read(min(n, 4096)) or b"{}")
+                except ValueError:
+                    return self._send(400, {"error": "richiesta non valida"})
+                secret = str(body.get("secret") or "")
+                with router.lock:
+                    if not router.cfg.get("unclaimed"):
+                        throttle.fail(who)
+                        return self._send(409, {"error": "Questa istanza è già stata attivata."})
+                    if len(secret) < 24 or any(ch.isspace() for ch in secret):
+                        return self._send(400, {"error": "codice non valido (almeno 24 caratteri, senza spazi)"})
+                    router.cfg["token"] = secret
+                    router.cfg["unclaimed"] = False
+                    router.log("istanza attivata")
+                    # il worker locale è già partito con un token vuoto: lo si aggiorna
+                    for cb in getattr(router, "on_claim", []):
+                        cb(secret)
+                return self._send(200, {"ok": True})
             wait = throttle.blocked(who)
             if wait:
                 return self._send(429, {"error": f"Troppi tentativi con un codice sbagliato: riprova tra {max(1, wait // 60)} minuti."})

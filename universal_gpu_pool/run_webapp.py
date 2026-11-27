@@ -94,10 +94,12 @@ def main():
                 print("      Se conteneva chiavi vere, REVOCALE e rigenerale (erano visibili a chi ha accesso ai file del Space).")
         cfg["trust_proxy"] = True            # dietro il proxy del servizio: l'IP vero sta in X-Forwarded-For
         cfg["verbose_worker"] = False
-        if len(str(cfg.get("token") or "")) < 24 or cfg.get("token") in WEAK_TOKENS:
-            print("\n  [!] Server pubblico: manca il segreto GPOOL_TOKEN (almeno 24 caratteri).")
-            print("      Impostalo in Settings → Variables and secrets del tuo Space e riavvia.\n")
+        if cfg["token"] and (len(cfg["token"]) < 24 or cfg["token"] in WEAK_TOKENS):
+            print("\n  [!] Il segreto GPOOL_TOKEN è troppo corto (servono almeno 24 caratteri).")
+            print("      Correggilo in Settings → Variables and secrets del tuo Space, oppure toglilo")
+            print("      per far attivare l'istanza dal primo dispositivo che la apre.\n")
             sys.exit(2)
+        cfg["unclaimed"] = not cfg["token"]       # nessun segreto: il primo dispositivo che la apre la attiva
 
     # Token: generato una volta sola e salvato in config/local_config.yaml (escluso da git)
     if cfg.get("token") in WEAK_TOKENS and not public:
@@ -152,6 +154,9 @@ def main():
             from worker.worker_daemon import Worker
             time.sleep(0.4)
             while True:     # se il worker termina (errore o fine sessione) ne parte un altro
+                if cfg.get("unclaimed"):          # istanza ancora da attivare: aspetta il primo accesso
+                    time.sleep(1)
+                    continue
                 try:
                     w = Worker(base_url, cfg["token"], store, name="local-api", api_only=True,
                                hb=max(5, int(cfg.get("heartbeat_interval", 10))),
@@ -181,7 +186,9 @@ def main():
     print("        GPU Pool — Webapp avviata")
     print("  =========================================")
     if public:
-        print(f"  Server pubblico in ascolto su {base_url}/ — accesso con il segreto GPOOL_TOKEN (non stampato).")
+        print(f"  Server pubblico in ascolto su {base_url}/ — " + (
+            "ancora DA ATTIVARE: il primo dispositivo che apre la pagina lo attiva." if cfg.get("unclaimed")
+            else "accesso con il segreto GPOOL_TOKEN (non stampato)."))
     else:
         print(f"  Apri:        {login_url}")
         print(f"  (indirizzo:  {base_url}/  — token in config/local_config.yaml)")

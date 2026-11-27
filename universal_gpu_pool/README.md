@@ -8,6 +8,25 @@ app_port: 7860
 pinned: false
 ---
 
+# 📱 Usalo dal telefono in 3 minuti — gratis, senza carta, senza installare nulla
+
+[![Duplicate this Space](https://huggingface.co/datasets/huggingface/badges/resolve/main/duplicate-this-space-xl.svg)](https://huggingface.co/spaces/TUO_UTENTE_HF/gpu-pool?duplicate=true)
+
+1. **Tocca il pulsante qui sopra** (anche dal telefono).
+2. **Entra** su Hugging Face, oppure crea un account gratuito: basta l'email, nessuna carta.
+3. Nella finestra «Duplicate this Space» tocca **Duplicate Space** (lascia tutto com'è).
+4. **Aspetta 2-3 minuti** che passi da «Building» a «Running» e tocca l'app: **si attiva da sola**.
+5. L'app ti guida: collega **Kaggle** (circa 30 ore di GPU gratis a settimana) e scegli cosa fare. Fine.
+
+Ti serve solo un account **Kaggle** gratuito (con il telefono verificato): l'app te lo spiega passo per passo.
+Il telefono ricorda i tuoi codici, quindi se il server gratuito si riavvia (succede) si rimette a posto da solo.
+**Non condividere il link personale** che l'app ti mostra in «📱 Telefono»: contiene il tuo codice di accesso.
+
+*Preferisci usarlo sul computer?* Scarica lo ZIP da GitHub (Code → Download ZIP), estrailo e fai doppio clic su `universal_gpu_pool/avvia.bat`
+(Windows) o `avvia.command` (Mac).
+
+---
+
 # GPU Pool (universal_gpu_pool)
 
 Webapp per usare modelli AI grandi **gratis**: le richieste vanno alle API gratuite (Groq, Cerebras,

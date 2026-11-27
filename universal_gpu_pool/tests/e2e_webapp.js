@@ -30,6 +30,7 @@ function startProc(cmd, args, opts, readyRe) {
   });
 }
 
+let pub = null;
 const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log('  ✓ ' + m); };
 
 (async () => {
@@ -277,6 +278,43 @@ Worker('${baseUrl}', cfg['token'], open_store(cfg), name='gpu-e2e', poll=0.3, hb
     await page.reload();
     await page.waitForSelector('#view-login:not(.hide)');
     assert(true, 'token sbagliato → richiesta login');
+
+    // 10. copia in cloud: si attiva da sola, il telefono ricorda i segreti, il server si riavvia e tutto si ricollega
+    const cport = 20000 + Math.floor(Math.random() * 900);
+    const pubEnv = { ...env, GPOOL_PUBLIC: '1' }; delete pubEnv.GPOOL_TOKEN;
+    const startPub = () => startProc('python3', ['run_webapp.py', '--port', String(cport), '--no-browser'], { cwd: proj, env: pubEnv }, /Server pubblico in ascolto su (http:\/\/\S+?)\/ /);
+    pub = await startPub();
+    const pubUrl = `http://127.0.0.1:${cport}`;
+    const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const ph = await ctx2.newPage();
+    await ph.goto(pubUrl + '/');
+    await ph.waitForSelector('#view-app:not(.hide)', { timeout: 15000 });
+    assert(true, 'Cloud: aprendo l\'indirizzo nuovo, l\'istanza si attiva da sola (nessuna password da inventare)');
+    await ph.waitForSelector('#accounts-card:not(.hide)', { timeout: 15000 });
+    assert(await ph.locator('#pub-note').isVisible(), 'Cloud: avviso «il telefono ricorda token e chiavi»');
+    await ph.fill('#kg-token', 'good-token');
+    await ph.click('#kg-save');
+    await ph.waitForSelector('#kg-out.ok', { timeout: 15000 });
+    assert((await ph.evaluate(() => localStorage.getItem('pool_restore') || '')).includes('good-token'), 'Cloud: il telefono ha memorizzato il token Kaggle');
+    await ph.screenshot({ path: path.join(shots, '11_cloud_attivata.png'), fullPage: true });
+    pub.p.kill(); await new Promise(r => setTimeout(r, 800));            // «il server gratuito si riavvia e dimentica tutto»
+    pub = await startPub();
+    await ph.reload();
+    await ph.waitForSelector('#view-app:not(.hide)', { timeout: 15000 });
+    await ph.waitForFunction(() => { const e = document.querySelector('#kg-status'); return e && e.textContent.includes('Collegato'); }, null, { timeout: 20000 });
+    assert(true, 'Cloud: dopo il riavvio del server il telefono ha riattivato l\'istanza e ricollegato Kaggle da solo');
+    const ctx3 = await browser.newContext();
+    const other = await ctx3.newPage();
+    await other.goto(pubUrl + '/');
+    await other.waitForSelector('#view-login:not(.hide)', { timeout: 15000 });
+    assert(await other.locator('#login-claimed').isVisible(), 'Cloud: un altro dispositivo senza il codice non entra e riceve una spiegazione');
+    await ph.click('#btn-phone');
+    const link = await ph.locator('#phone-link').inputValue();
+    assert(link.startsWith(pubUrl + '/#t='), 'Cloud: il pannello Telefono mostra il link personale da aprire su altri dispositivi');
+    await other.goto(link);
+    await other.waitForSelector('#view-app:not(.hide)', { timeout: 15000 });
+    assert(true, 'Cloud: con il link personale anche un secondo dispositivo entra');
+    await ctx2.close(); await ctx3.close();
     console.log('\nE2E OK');
   } catch (e) {
     await page.screenshot({ path: path.join(shots, 'ERRORE.png'), fullPage: true }).catch(() => {});
@@ -284,6 +322,6 @@ Worker('${baseUrl}', cfg['token'], open_store(cfg), name='gpu-e2e', poll=0.3, hb
     process.exitCode = 1;
   } finally {
     await browser.close();
-    app.p.kill(); fake2.p.kill(); fkag.p.kill(); fgh.p.kill();
+    app.p.kill(); fake2.p.kill(); fkag.p.kill(); fgh.p.kill(); if (pub) pub.p.kill();
   }
 })();

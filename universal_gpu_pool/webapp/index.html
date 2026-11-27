@@ -172,6 +172,8 @@ details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
         <button class="btn block" id="btn-login">Entra</button>
       </div>
       <div class="err" id="login-err"></div>
+      <p class="muted small hide" id="login-claimed" style="margin-top:12px">Questo indirizzo è già stato <b>attivato da un altro dispositivo</b>. Se è il tuo, apri il link che avevi salvato (contiene già il codice) oppure incolla qui il codice.<br>
+        Vuoi una tua copia gratuita? <a href="https://github.com/Giuseppe210992/ALFA" target="_blank" rel="noopener noreferrer">github.com/Giuseppe210992/ALFA</a></p>
     </div>
   </div>
 
@@ -222,6 +224,7 @@ details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
         Se ne colleghi più d'uno il pool li alterna da solo quando uno finisce la quota gratuita.
         Le chiavi restano solo su questo computer (<code>config/secrets.env</code>).
       </p>
+      <p class="muted small hide" id="pub-note" style="margin:8px 0 0">☁️ Questa copia gira su un server gratuito che <b>dimentica tutto quando si riavvia</b>. Per questo il <b>tuo telefono ricorda</b> il token Kaggle e le chiavi (solo qui, sul tuo dispositivo) e le rimette da solo. Non usare questa pagina da un dispositivo che non è tuo.</p>
       <div class="sect">🖥️ GPU in cloud — per far girare programmi pesanti</div>
       <div class="prov" id="kaggle-box">
         <div class="head">
@@ -483,15 +486,17 @@ let accountsOpen = false;
 
 function store(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} }
 
-// Login automatico: il link stampato all'avvio contiene #t=<token> (il frammento non va in rete)
-(function autoLogin() {
+// Login automatico: il link ha #t=<token> (il frammento non va in rete). Vale anche se lo si incolla in una scheda già aperta.
+function takeTokenFromHash() {
   const m = location.hash.match(/[#&]t=([^&]+)/);
-  if (m) {
-    tok = decodeURIComponent(m[1]);
-    store('pooltok', tok);
-    history.replaceState(null, '', location.pathname + location.search);
-  }
-})();
+  if (!m) return false;
+  tok = decodeURIComponent(m[1]);
+  store('pooltok', tok);
+  history.replaceState(null, '', location.pathname + location.search);
+  return true;
+}
+takeTokenFromHash();
+window.addEventListener('hashchange', () => { if (takeTokenFromHash()) bootstrap(); });
 
 function toast(msg, ms) {
   const t = $('#toast');
@@ -641,6 +646,7 @@ function renderProviders() {
         if (custom && urlIn && urlIn.value.trim() !== (p.base_url || '')) await saveProvider(el, p, true);
         if (v) {
           settings = await api('/settings/key', { method: 'POST', body: JSON.stringify({ key_env: p.key_env, value: v }) });
+          remember('key', p.key_env, v);
         }
         keyIn.value = '';
         toast('Salvato. Ora lo provo…');
@@ -674,6 +680,7 @@ function renderProviders() {
       if (!confirm('Rimuovere la chiave di ' + (p.label || p.name) + '?')) return;
       try {
         settings = await api('/settings/key', { method: 'POST', body: JSON.stringify({ key_env: p.key_env, value: '' }) });
+        remember('key', p.key_env, '');
         renderProviders(); renderOnboard(); toast('Chiave rimossa');
       } catch (e) { setOut('Errore: ' + e.message, 'bad'); }
     };
@@ -796,6 +803,58 @@ function initDrops() {
   $('#d3-url').addEventListener('input', () => { if ($('#d3-url').value.trim() && d3Drop.get()) d3Drop.clear(); });
 }
 
+/* ---------------- istanza in cloud: attivazione e ripristino ---------------- */
+let publicMode = false;
+const RESTORE_KEY = 'pool_restore';
+function loadRestore() { try { return JSON.parse(localStorage.getItem(RESTORE_KEY) || '{}'); } catch (e) { return {}; } }
+function saveRestore(o) { try { localStorage.setItem(RESTORE_KEY, JSON.stringify(o)); } catch (e) {} }
+// Il server gratuito in cloud dimentica tutto quando si riavvia: il telefono ricorda token e chiavi (solo qui) e li rimette da solo.
+function remember(kind, name, value) {
+  if (!publicMode) return;
+  const r = loadRestore();
+  if (kind === 'kaggle') { value ? (r.kaggle = value) : delete r.kaggle; }
+  else { r.keys = r.keys || {}; value ? (r.keys[name] = value) : delete r.keys[name]; }
+  saveRestore(r);
+}
+async function autoRestore() {
+  if (!publicMode) return;
+  const r = loadRestore();
+  let restored = [];
+  try {
+    if (r.kaggle) {
+      const g = await api('/gpu');
+      if (!g.kaggle.connected) { await api('/gpu/kaggle', { method: 'POST', body: JSON.stringify({ token: r.kaggle }) }); restored.push('Kaggle'); }
+    }
+    const keys = r.keys || {};
+    if (Object.keys(keys).length) {
+      const s = await api('/settings');
+      for (const p of s.providers) {
+        if (!p.has_key && keys[p.key_env]) { await api('/settings/key', { method: 'POST', body: JSON.stringify({ key_env: p.key_env, value: keys[p.key_env] }) }); restored.push(p.label || p.name); }
+      }
+    }
+  } catch (e) { return; }
+  if (restored.length) { toast('Server riavviato: ricollegato ' + restored.join(', ')); loadGpu(); loadSettings(); }
+}
+async function bootstrap() {
+  let st = null;
+  try { st = await (await fetch('/claim/status')).json(); } catch (e) {}
+  publicMode = !!(st && st.public);
+  if (publicMode) $('#pub-note').classList.remove('hide');
+  if (st && !st.claimed) {
+    // istanza nuova (o appena riavviata): la attiva questo dispositivo con il proprio codice casuale
+    const secret = tok && tok.length >= 24 ? tok : randomSecret(40);
+    try {
+      const r = await fetch('/claim', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secret }) });
+      if (r.ok) { tok = secret; store('pooltok', tok); }
+    } catch (e) {}
+  }
+  if (tok) { await enter(); autoRestore(); }
+  else {
+    showLogin();
+    if (st && st.claimed && publicMode) $('#login-claimed').classList.remove('hide');
+  }
+}
+
 /* ---------------- telefono ---------------- */
 function randomSecret(n) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';     // senza caratteri ambigui (0/O, 1/l/I)
@@ -829,6 +888,15 @@ async function openPhone(open) {
   if (!open) return;
   const body = $('#phone-body');
   body.textContent = 'Controllo…';
+  if (publicMode) {
+    const link = location.origin + '/#t=' + encodeURIComponent(tok);
+    body.innerHTML = `<p style="margin-top:0">Questa copia è su internet: funziona da qualsiasi posto e a PC spento. Per aprirla su un <b>altro dispositivo</b> usa questo link personale
+      (contiene il tuo codice di accesso: <b>non condividerlo</b>):</p>
+      <div class="keyrow" style="display:flex;gap:8px"><input type="text" id="phone-link" readonly style="flex:1" value="${escapeHtml(link)}"><button class="btn sm" id="phone-copy">Copia</button></div>
+      <p class="small" style="margin-top:10px">Consiglio: salvalo nei preferiti del browser o aggiungi la pagina alla schermata Home.</p>`;
+    $('#phone-copy').onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copiato'); } catch { $('#phone-link').select(); toast('Selezionato: copialo a mano'); } };
+    return;
+  }
   let n;
   try { n = await api('/network'); } catch (e) { body.textContent = 'Errore: ' + e.message; return; }
   if (!n.lan) {
@@ -881,6 +949,7 @@ $('#kg-save').onclick = async (ev) => {
   const b = ev.currentTarget; b.disabled = true; kgOut('Controllo il token con Kaggle…', '');
   try {
     gpu = await api('/gpu/kaggle', { method: 'POST', body: JSON.stringify({ token: v }) });
+    remember('kaggle', '', v);
     $('#kg-token').value = '';
     renderGpu();
     const q = gpu.kaggle.quota;
@@ -898,7 +967,7 @@ $('#kg-test').onclick = async (ev) => {
 };
 $('#kg-del').onclick = async () => {
   if (!confirm('Scollegare l\'account Kaggle da questo computer?')) return;
-  try { gpu = await api('/gpu/kaggle', { method: 'POST', body: JSON.stringify({ token: '' }) }); renderGpu(); kgOut('Scollegato.', ''); }
+  try { gpu = await api('/gpu/kaggle', { method: 'POST', body: JSON.stringify({ token: '' }) }); remember('kaggle', '', ''); renderGpu(); kgOut('Scollegato.', ''); }
   catch (e) { kgOut('✗ ' + e.message, 'bad'); }
 };
 
@@ -1478,8 +1547,7 @@ $('#btn-refresh').onclick = () => { tick(); tickSettings(); };
 $('#tok').addEventListener('keydown', e => { if (e.key === 'Enter') $('#btn-login').click(); });
 
 initDrops();
-if (tok) { enter(); }
-else showLogin();
+bootstrap();
 setInterval(tick, 2500);
 setInterval(tickSettings, 10000);
 </script>
