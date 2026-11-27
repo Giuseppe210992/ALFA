@@ -39,6 +39,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from adapters.base_adapter import BaseAdapter
+from core.linkfix import direct_url
 
 REPO_URL = "https://github.com/Robbyant/lingbot-map.git"
 RUNNER = Path(__file__).with_name("lingbot_map_runner.py")
@@ -112,6 +113,8 @@ class LingBotMapAdapter(BaseAdapter):
 
     # ---------- piano ----------
     def plan(self, items, params, limits):
+        if params.get("runtime") == "kaggle":
+            return self._plan_kaggle(items, params)
         steps = []
         for i, it in enumerate(items):
             if isinstance(it, str):
@@ -124,6 +127,36 @@ class LingBotMapAdapter(BaseAdapter):
             it = dict(it)
             it.setdefault("id", f"scena{i + 1}")
             steps.append({"id": f"step_{i + 1:03d}", "depends_on": [], "payload": {"scene": it}})
+        return steps
+
+    def _plan_kaggle(self, items, params):
+        """runtime «kaggle»: stessa ricostruzione, ma eseguita su una GPU gratuita di Kaggle (nessun nodo del pool)."""
+        from core import github_repo
+        from core.recipes import LINGBOT_REPO, lingbot_cfg
+        opts = dict(params.get("options") or {})
+        owner, repo, _ = github_repo.parse_url(LINGBOT_REPO)
+        steps = []
+        for i, it in enumerate(items):
+            if isinstance(it, str):
+                it = {("video" if it.lower().split("?")[0].endswith(VIDEO_EXT) else "images"): it}
+            if not isinstance(it, dict) or bool(it.get("video")) == bool(it.get("images")):
+                raise ValueError(f"item {i}: indica esattamente uno tra 'video' e 'images'")
+            key = "video" if it.get("video") else "images"
+            url = str(it[key]).strip()
+            if not _is_url(url):
+                raise ValueError("per l'esecuzione su Kaggle serve un link (https://…) al video o allo ZIP di foto")
+            try:
+                url = direct_url(url)[0]
+            except ValueError as e:
+                raise ValueError(str(e))
+            rc = lingbot_cfg({key: url}, opts)
+            cfg = {"repo_url": f"https://github.com/{owner}/{repo}", "clone_url": github_repo.clone_url(owner, repo),
+                   "ref": opts.get("repo_ref", ""), "setup": rc["setup"], "run": rc["run"], "values": {},
+                   "downloads": {rc["input_key"]: url}, "outputs": [], "timeout_s": rc["timeout_s"],
+                   "setup_timeout_s": 2400, "gpu": True, "title": rc["title"], "files": rc["files"]}
+            steps.append({"id": f"step_{i + 1:03d}", "depends_on": [], "payload": {"cfg": cfg}})
+        if not steps:
+            raise ValueError("indica un video o uno ZIP di foto")
         return steps
 
     # ---------- ambiente ----------
@@ -198,6 +231,7 @@ class LingBotMapAdapter(BaseAdapter):
         if scene.get("video"):
             src = str(scene["video"])
             if _is_url(src):
+                src = direct_url(src)[0]
                 name = Path(src.split("?")[0]).name or "video.mp4"
                 src = str(_download(src, work / name, max_bytes, log))
             if not Path(src).is_file():
@@ -205,6 +239,7 @@ class LingBotMapAdapter(BaseAdapter):
             return ["--video_path", src, "--fps", str(int(opts.get("fps", 10)))]
         src = str(scene["images"])
         if _is_url(src):
+            src = direct_url(src)[0]
             z = _download(src, work / "foto.zip", max_bytes, log)
             src = str(_safe_unzip(z, work / "foto"))
         if not Path(src).is_dir():
@@ -217,6 +252,12 @@ class LingBotMapAdapter(BaseAdapter):
 
     # ---------- esecuzione ----------
     def run_step(self, ctx):
+        if "cfg" in ctx.step["payload"]:                      # runtime kaggle: lo esegue l'adapter github_repo
+            from adapters.github_repo_adapter import GitHubRepoAdapter
+            ad = GitHubRepoAdapter()
+            ad.run_step(ctx)
+            self.last_metrics = getattr(ad, "last_metrics", None)
+            return
         params = dict(ctx.params)
         opts = dict(params.get("options") or {})
         scene = ctx.step["payload"]["scene"]
@@ -330,4 +371,9 @@ class LingBotMapAdapter(BaseAdapter):
             raise RuntimeError(f"LingBot-Map terminato con errore {rc}: " + " | ".join(important[-6:])[:1500] + hint)
 
     def validate(self, ctx):
-        return (Path(ctx.tmp_dir) / "results.jsonl").exists() and (Path(ctx.tmp_dir) / "predictions.npz").exists()
+        out = Path(ctx.tmp_dir)
+        if not (out / "results.jsonl").exists():
+            return False
+        if "cfg" in ctx.step.get("payload", {}):              # esecuzione su Kaggle: anche un errore va consegnato
+            return True
+        return (out / "predictions.npz").exists()

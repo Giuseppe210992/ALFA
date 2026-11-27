@@ -136,7 +136,7 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
     assert(await page.locator('#wiz-2').isVisible(), '3D: link non valido bloccato nel passo 2');
     await page.fill('#d3-url', 'https://esempio.org/stanza.mp4');
     await page.click('#btn-next2');
-    assert((await page.locator('#summary').textContent()).includes('Nessun nodo GPU'), '3D: avviso "nessun nodo GPU" nel riepilogo');
+    assert((await page.locator('#summary').textContent()).includes('Non hai ancora collegato Kaggle'), '3D: avviso «Kaggle non collegato» nel riepilogo');
     await page.screenshot({ path: path.join(shots, '6_3d_riepilogo.png'), fullPage: true });
     await page.click('#btn-back3'); await page.click('#btn-back2');
     // lavoro 3D "vero" via modalità esperta, con il finto repository di test

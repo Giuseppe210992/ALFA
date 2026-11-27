@@ -108,7 +108,15 @@ dell'utente neutralizzati; l'intero percorso nel browser (token → analisi → 
 blocca per i repository di terzi). Il primo collegamento reale potrebbe richiedere un piccolo aggiustamento: se vedi un errore da Kaggle,
 mandami il messaggio. Per provare l'account reale: `KAGGLE_API_TOKEN_REAL=<token> python -m unittest tests.test_github_runner.RealKaggleTest`.
 
-## Ricostruzione 3D con LingBot-Map (richiede un nodo GPU)
+## Ricostruzione 3D con LingBot-Map
+
+Dalla webapp: **«Ricostruzione 3D»** → incolla il link del video (o di uno **ZIP** di foto) → Avvia. Gira su una GPU gratuita
+di Kaggle (serve l'account Kaggle collegato), non richiede nodi nel pool. I link copiati da **Google Drive**
+(«Chiunque abbia il link») e **Dropbox** vengono convertiti da soli in link diretti; le cartelle di Drive non si possono scaricare (crea uno ZIP).
+Su Kaggle FlashInfer non c'è: si usa l'attenzione SDPA (più lenta ma equivalente). Non verificato su Kaggle reale: compatibilità
+della versione di PyTorch di Kaggle con LingBot-Map. Qui sotto, il funzionamento con nodi GPU propri (runtime «pool»).
+
+### Ricostruzione 3D con un nodo GPU del pool (avanzato)
 
 [LingBot-Map](https://github.com/Robbyant/lingbot-map) (Apache-2.0) ricostruisce una scena 3D da un video o da foto:
 posizione della camera e nuvola di punti. Nel pool è l'adapter `lingbot_map`; nella webapp è **«Ricostruzione 3D»**.

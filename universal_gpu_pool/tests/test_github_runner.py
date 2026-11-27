@@ -140,7 +140,7 @@ class ParseAndPlanTest(unittest.TestCase):
         v = rp.validate_values(plan, {"testo": " ciao ", "ok": "sì"})
         self.assertEqual(v, {"testo": "ciao", "ripetizioni": "2", "modo": "a", "foto": "", "ok": "1"})
         for bad, msg in (({}, "Testo da ripetere"), ({"testo": "x", "ripetizioni": "tre"}, "numero"),
-                         ({"testo": "x", "modo": "z"}, "scegli"), ({"testo": "x", "foto": "file.png"}, "link diretto")):
+                         ({"testo": "x", "modo": "z"}, "scegli"), ({"testo": "x", "foto": "file.png"}, "link che inizia")):
             with self.assertRaisesRegex(ValueError, msg):
                 rp.validate_values(plan, bad)
 
@@ -556,6 +556,101 @@ class SystemTest(EnvCase):
         code, page = self.call("GET", "/", token=None)
         for needle in ('data-mode="repo"', "form-repo", "/repos/analyze", "/gpu/kaggle", "kaggle.com/settings/api"):
             self.assertIn(needle, page)
+
+
+class LinkFixTest(unittest.TestCase):
+    def test_share_links_become_direct(self):
+        from core.linkfix import direct_url
+        fid = "1jdIF5mTjOy8RI6sr1FnXqkNtUsuZMy6D"
+        for u in (f"https://drive.google.com/file/d/{fid}/view?usp=sharing", f"https://drive.google.com/open?id={fid}",
+                  f"https://drive.google.com/uc?export=download&id={fid}"):
+            self.assertEqual(direct_url(u)[0], f"https://drive.usercontent.google.com/download?id={fid}&export=download&confirm=t")
+        self.assertEqual(direct_url("https://www.dropbox.com/s/ab/f.zip?dl=0")[0], "https://www.dropbox.com/s/ab/f.zip?dl=1")
+        self.assertEqual(direct_url("https://github.com/o/r/blob/main/a.mp4")[0], "https://raw.githubusercontent.com/o/r/main/a.mp4")
+        self.assertEqual(direct_url("https://esempio.org/v.mp4"), ("https://esempio.org/v.mp4", None))
+        with self.assertRaisesRegex(ValueError, "CARTELLA"):
+            direct_url("https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOp")
+        with self.assertRaisesRegex(ValueError, "OneDrive"):
+            direct_url("https://1drv.ms/u/s!abc")
+
+    def test_url_inputs_are_converted_by_validate_values(self):
+        plan = rp.normalize_plan({**PLAN, "inputs": [{"key": "f", "type": "url", "label": "File"}]})
+        v = rp.validate_values(plan, {"f": "https://drive.google.com/file/d/ABCDEFGHIJK12/view"})
+        self.assertIn("drive.usercontent.google.com/download?id=ABCDEFGHIJK12", v["f"])
+        with self.assertRaisesRegex(ValueError, "CARTELLA"):
+            rp.validate_values(plan, {"f": "https://drive.google.com/drive/folders/ABCDEFGHIJK12"})
+
+
+class LingBotOnKaggleTest(EnvCase):
+    """La ricostruzione 3D su Kaggle: stesso adapter, runtime «kaggle», script e ricetta pronti."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        stub = ROOT / "tests" / "stub_lingbot"
+        files = {str(p.relative_to(stub)): p.read_text(encoding="utf-8") for p in stub.rglob("*.py")}
+        make_repo(cls.tmp / "gh", "Robbyant", "lingbot-map", files)
+        cls.srv = tempfile.mkdtemp(prefix="lbk_srv_")
+        import zipfile
+        with zipfile.ZipFile(Path(cls.srv) / "foto.zip", "w") as z:
+            for i in range(5):
+                z.writestr(f"stanza/{i:03d}.jpg", b"jpg%d" % i)
+        from tests.test_lingbot import FileServer
+        cls.files = FileServer(cls.srv)
+        cls.model = Path(cls.srv) / "fake.pt"
+        cls.model.write_bytes(b"w")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.files.stop(); shutil.rmtree(cls.srv, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        self.out = Path(tempfile.mkdtemp(prefix="lbk_out_"))
+        os.environ["KAGGLE_API_TOKEN"] = "good-token"
+
+    def tearDown(self):
+        shutil.rmtree(self.out, ignore_errors=True)
+        os.environ.pop("KAGGLE_API_TOKEN", None)
+
+    def run_adapter(self, items, **opts):
+        from adapters.lingbot_map_adapter import LingBotMapAdapter
+        params = {"runtime": "kaggle", "options": {"setup": [], "model_path": str(self.model), "poll_s": 0.2, **opts}}
+        ad = LingBotMapAdapter()
+        step = ad.plan(items, params, {})[0]
+        ctx = StepContext(None, "j", step, params, self.out, lambda p: None, "t", self.out / "c")
+        ad.run_step(ctx)
+        return ad, ctx, json.loads((self.out / "results.jsonl").read_text().splitlines()[0])
+
+    def test_plan_validation_and_link_fix(self):
+        from adapters.lingbot_map_adapter import LingBotMapAdapter
+        ad = LingBotMapAdapter()
+        st = ad.plan([{"video": "https://drive.google.com/file/d/ABCDEFGHIJK12/view"}], {"runtime": "kaggle"}, {})
+        cfg = st[0]["payload"]["cfg"]
+        self.assertIn("drive.usercontent.google.com/download?id=ABCDEFGHIJK12", cfg["downloads"]["video"])
+        self.assertIn("--video_path {video}", cfg["run"]); self.assertIn("--use_sdpa", cfg["run"])
+        self.assertIn("pip install -q -e .", cfg["setup"][0]); self.assertIn("hf_hub_download", cfg["setup"][1])
+        self.assertIn("_gpool_lingbot_runner.py", cfg["files"])
+        for bad, msg in (([{"video": "/percorso/locale.mp4"}], "link"), ([{}], "esattamente"), ([], "indica"),
+                         ([{"images": "https://drive.google.com/drive/folders/ABCDEFGHIJK12"}], "CARTELLA")):
+            with self.assertRaisesRegex(ValueError, msg):
+                ad.plan(bad, {"runtime": "kaggle"}, {})
+
+    def test_zip_of_photos_runs_on_kaggle(self):
+        ad, ctx, rec = self.run_adapter([{"id": "stanza", "images": self.files.base + "/foto.zip"}])
+        self.assertTrue(rec["ok"], rec)
+        names = set(rec["files"])
+        self.assertTrue({"outputs/predictions.npz", "outputs/camera_poses.json", "outputs/summary.json"} <= names, names)
+        poses = json.loads((self.out / "outputs" / "camera_poses.json").read_text())["frames"]
+        self.assertEqual(len(poses), 5, "lo ZIP con una cartella di foto va scompattato e passato come cartella")
+        self.assertTrue(ad.validate(ctx))
+        self.assertIn("--use_sdpa", (self.out / "run.log").read_text())
+
+    def test_failure_is_delivered_and_validates(self):
+        os.environ["KAGGLE_API_TOKEN"] = "revocato"
+        ad, ctx, rec = self.run_adapter([{"images": self.files.base + "/foto.zip"}])
+        self.assertFalse(rec["ok"])
+        self.assertTrue(ad.validate(ctx), "un errore va consegnato, non ritentato 5 volte")
 
 
 @unittest.skipUnless(os.environ.get("KAGGLE_API_TOKEN_REAL"), "imposta KAGGLE_API_TOKEN_REAL per provare con Kaggle vero")

@@ -120,8 +120,14 @@ def validate_values(plan, values):
                 raise ValueError(f"«{it['label']}» deve essere un numero.") from None
         if it["type"] == "choice" and v and v not in it["choices"]:
             raise ValueError(f"«{it['label']}»: scegli uno dei valori proposti.")
-        if it["type"] == "url" and v and not re.match(r"^https?://\S+$", v):
-            raise ValueError(f"«{it['label']}» deve essere un link diretto che inizia con https://")
+        if it["type"] == "url" and v:
+            if not re.match(r"^https?://\S+$", v):
+                raise ValueError(f"«{it['label']}» deve essere un link che inizia con https://")
+            from core.linkfix import direct_url
+            try:
+                v = direct_url(v)[0]
+            except ValueError as e:
+                raise ValueError(f"«{it['label']}»: {e}") from None
         out[it["key"]] = v[:5000]
     return out
 

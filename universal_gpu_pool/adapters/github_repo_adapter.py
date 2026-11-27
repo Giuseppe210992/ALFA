@@ -46,7 +46,7 @@ class GitHubRepoAdapter(BaseAdapter):
         cfg = {"repo_url": f"https://github.com/{owner}/{repo}", "clone_url": github_repo.clone_url(owner, repo),
                "ref": ref, "setup": plan["setup"], "run": plan["run"], "values": plain, "downloads": downloads,
                "outputs": plan["outputs"], "timeout_s": int(plan["timeout_min"]) * 60,
-               "setup_timeout_s": 2400, "gpu": bool(opts.get("gpu", plan["gpu"])), "title": plan["title"] or repo}
+               "setup_timeout_s": 2400, "gpu": bool(opts.get("gpu", plan["gpu"])), "title": plan["title"] or repo, "files": {}}
         return [{"id": "step_001", "depends_on": [], "payload": {"cfg": cfg}}]
 
     # ---------- esecuzione ----------

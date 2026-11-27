@@ -184,6 +184,14 @@ def main():
         except Exception:
             pass
 
+        for rel, content in (CFG.get("files") or {}).items():       # file forniti dal sistema (es. script di avvio)
+            dst = os.path.join(REPO, rel)
+            if os.path.commonpath([os.path.realpath(REPO), os.path.realpath(dst)]) != os.path.realpath(REPO):
+                raise RuntimeError("percorso file non valido: " + rel)
+            os.makedirs(os.path.dirname(dst) or REPO, exist_ok=True)
+            with open(dst, "w", encoding="utf-8") as f:
+                f.write(content)
+
         # 2. setup
         res["stage"] = "setup"
         for c in CFG.get("setup", []):

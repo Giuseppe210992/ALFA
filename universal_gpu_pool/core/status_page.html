@@ -269,7 +269,7 @@ details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
             </button>
             <button type="button" class="choice" data-mode="3d">
               <span class="ico">🗺️</span>
-              <span><b>Ricostruzione 3D</b><span>Da un video o da foto a una scena 3D (LingBot-Map). Serve un nodo GPU nel pool.</span></span>
+              <span><b>Ricostruzione 3D</b><span>Da un video o da foto a una scena 3D (LingBot-Map), su una GPU gratuita di Kaggle.</span></span>
             </button>
             <button type="button" class="choice" data-mode="local">
               <span class="ico">🖥️</span>
@@ -342,15 +342,15 @@ details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
               <option value="video" selected>Un video (mp4, mov…)</option>
               <option value="images">Uno ZIP di foto (jpg/png)</option>
             </select>
-            <label for="d3-url">Indirizzo (link diretto al file)</label>
-            <input id="d3-url" type="text" placeholder="https://…/video.mp4  (link pubblico e diretto al file)">
+            <label for="d3-url">Link al file</label>
+            <input id="d3-url" type="text" placeholder="Incolla il link (Google Drive, Dropbox, …)">
             <label for="d3-fps">Fotogrammi al secondo da usare (solo video)</label>
             <select id="d3-fps">
               <option value="5">5 — veloce</option>
               <option value="10" selected>10 — consigliato</option>
               <option value="15">15 — più dettagliato</option>
             </select>
-            <p class="hint">Il file deve essere raggiungibile da internet con un link diretto (es. Dropbox con <code>?dl=1</code>, un link diretto di Hugging Face, un tuo server). Risultato: <b>scene.glb</b> (nuvola di punti 3D) e le pose della camera, scaricabili da «Risultati».</p>
+            <p class="hint">Va bene il link che copi da <b>Google Drive</b> («Condividi → Chiunque abbia il link») o da <b>Dropbox</b>: lo converto io. Per le foto serve <b>uno ZIP</b>, non una cartella. Risultato: <b>scene.glb</b> (nuvola di punti 3D) e le pose della camera, scaricabili da «Risultati». Richiede l'account Kaggle collegato.</p>
           </div>
           <!-- local -->
           <div id="form-local" class="hide">
@@ -836,7 +836,7 @@ $$('#choices .choice').forEach(btn => {
     $$('#choices .choice').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     mode = btn.dataset.mode;
-    if (mode === 'repo') loadGpu();
+    if (mode === 'repo' || mode === '3d') loadGpu();
   };
   btn.ondblclick = () => setStep(2);
 });
@@ -885,7 +885,8 @@ function validateStep2() {
   }
   if (mode === '3d') {
     const u = $('#d3-url').value.trim();
-    if (!/^https?:\/\/\S+$/i.test(u)) { toast('Inserisci un link diretto che inizi con https://'); return false; }
+    if (!/^https?:\/\/\S+$/i.test(u)) { toast('Incolla un link che inizia con https://'); return false; }
+    if (/drive\.google\.com\/drive\/folders\//i.test(u)) { toast('Questa è una cartella di Drive: crea uno ZIP con le foto e incolla il link dello ZIP.'); return false; }
   }
   if (mode === 'advanced') {
     try { buildPayload(); } catch (e) { toast(e.message); return false; }
@@ -927,7 +928,11 @@ function buildSummary() {
     s.innerHTML = `<b>Tipo:</b> Esperto · adapter <code>${escapeHtml($('#adv-adapter').value)}</code><br>
       <span class="muted">Verrà inviato il JSON che hai compilato.</span>`;
   }
-  if ((mode === '3d' || mode === 'local') && lastStatus && !hasGpuNode()) {
+  if (mode === '3d' && !(gpu && gpu.kaggle && gpu.kaggle.connected)) {
+    s.innerHTML += `<br><br><span style="color:var(--warn)">⚠ Non hai ancora collegato Kaggle: senza, il lavoro non può partire.</span> <a href="#" id="lnk-kg3">Collega Kaggle</a>`;
+    const l3 = $('#lnk-kg3'); if (l3) l3.onclick = ev => { ev.preventDefault(); openAccounts(true); };
+  }
+  if (mode === 'local' && lastStatus && !hasGpuNode()) {
     s.innerHTML += `<br><br><span style="color:var(--warn)">⚠ Nessun nodo GPU collegato al pool: il lavoro resterà «in coda» finché non ne colleghi uno (vedi la guida, sezione Kaggle).</span>`;
   }
   if (mode !== 'local' && mode !== 'advanced' && mode !== '3d' && settings && !settings.ready) {
@@ -967,7 +972,7 @@ function buildPayload() {
     return {
       adapter: 'lingbot_map',
       items: [{ id: 'scena', [kind]: url }],
-      params: { title: '3D: ' + url.split('?')[0].split('/').pop().slice(0, 40), options: { fps: +$('#d3-fps').value } }
+      params: { runtime: 'kaggle', title: '3D: ' + (kind === 'video' ? 'video' : 'foto'), options: { fps: +$('#d3-fps').value } }
     };
   }
   if (mode === 'chat') {
