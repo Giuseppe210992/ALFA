@@ -39,6 +39,10 @@ class Router:
         self.store = store or open_store(cfg)
         self.planner = Planner(cfg)
         self.lock = threading.RLock()
+        from core import uploads
+        root = (cfg.get("store_root") if cfg.get("store_backend", "local") != "s3" else None) or None
+        if root:
+            uploads.configure(Path(root) / "uploads")
         self.workers = {}   # id -> {profile, name, last_seen, status, session_start}
         self.jobs = {}      # id -> {manifest, steps:{id:state}, order:[ids], status}
         self.events = []
@@ -810,6 +814,17 @@ def make_server(router, host, port):
                 return self._send_raw(204, b"", "image/x-icon")
             if not token_ok(self.headers.get("X-Pool-Token")):
                 return self._send(401, {"error": "token non valido"})
+            if method == "POST" and u.path == "/uploads":              # file trascinato dall'utente (corpo binario)
+                from core import uploads
+                try:
+                    q = {k: v[0] for k, v in parse_qs(u.query).items()}
+                    n = int(self.headers.get("Content-Length") or 0)
+                    maxb = int(float(router.cfg.get("max_upload_gb", 5)) * 1e9)
+                    return self._send(200, uploads.save_stream(self.rfile, n, q.get("name", "file"), maxb))
+                except uploads.UploadError as e:
+                    return self._send(400, {"error": str(e)})
+                except (ValueError, OSError) as e:
+                    return self._send(400, {"error": f"caricamento non riuscito: {e}"})
             try:
                 q = {k: v[0] for k, v in parse_qs(u.query).items()}
                 body = {}

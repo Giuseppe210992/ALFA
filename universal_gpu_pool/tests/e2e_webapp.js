@@ -42,9 +42,10 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
   const planFile = path.join(proj, 'e2e_plan.json');
   fs.writeFileSync(planFile, JSON.stringify({
     title: 'Demo App', summary: 'Ripete un testo e lo salva in un file.', gpu: false, setup: ['echo installazione-ok'],
-    run: 'python app.py --text {testo} --repeat {ripetizioni} --out {OUT}',
+    run: 'python app.py --text {testo} --repeat {ripetizioni} --input {file} --out {OUT}',
     inputs: [{ key: 'testo', label: 'Testo da ripetere', type: 'text', required: true },
-             { key: 'ripetizioni', label: 'Quante volte', type: 'number', default: '2', required: false }],
+             { key: 'ripetizioni', label: 'Quante volte', type: 'number', default: '2', required: false },
+             { key: 'file', label: 'File di dati', type: 'url', required: true }],
     outputs: [], timeout_min: 5 }));
   const fake2 = await startProc('python3', ['-m', 'tests.fake_openai', String(fport)], { cwd: proj, env: { ...env, FAKE_PLAN_JSON: planFile } }, /fake OpenAI su (\S+)/);
   const fakeUrl = fake2.m[1];
@@ -138,7 +139,21 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
     await page.click('#btn-next2');
     assert((await page.locator('#summary').textContent()).includes('Non hai ancora collegato Kaggle'), '3D: avviso «Kaggle non collegato» nel riepilogo');
     await page.screenshot({ path: path.join(shots, '6_3d_riepilogo.png'), fullPage: true });
-    await page.click('#btn-back3'); await page.click('#btn-back2');
+    await page.click('#btn-back3');            // si torna al passo 2 (dove c'è il modulo)
+    // trascinare uno ZIP dal computer nel modo 3D
+    const zipPath = path.join(proj, 'e2e_foto.zip');
+    require('child_process').execFileSync('python3', ['-c', `import zipfile; z=zipfile.ZipFile(${JSON.stringify(zipPath)},'w'); [z.writestr('s/%d.jpg'%i,b'x') for i in range(3)]; z.close()`]);
+    await page.fill('#d3-url', '');
+    await page.locator('#d3-drop input[type=file]').setInputFiles(zipPath);
+    await page.waitForSelector('#d3-drop .done:not(.hide)', { timeout: 15000 });
+    assert((await page.locator('#d3-drop .done').textContent()).includes('e2e_foto.zip'), '3D: file ZIP caricato dal computer (zona «trascina qui»)');
+    assert(await page.locator('#d3-kind').inputValue() === 'images', '3D: uno ZIP imposta da solo «ZIP di foto»');
+    await page.click('#btn-next2');
+    assert((await page.locator('#summary').textContent()).includes('e2e_foto.zip'), '3D: il riepilogo mostra il file caricato (senza link)');
+    await page.click('#btn-back3');
+    await page.click('#d3-drop .x');
+    assert(await page.locator('#d3-drop .done').isHidden(), '3D: il file si può rimuovere');
+    await page.click('#btn-back2');
     // lavoro 3D "vero" via modalità esperta, con il finto repository di test
     const photos = path.join(proj, 'e2e_photos');
     fs.mkdirSync(photos, { recursive: true });
@@ -161,7 +176,7 @@ cfg = load_config('config/pool_config.yaml')
 Worker('${baseUrl}', cfg['token'], open_store(cfg), name='gpu-e2e', poll=0.3, hb=1, verbose=False).run()
 `], { cwd: proj, env, stdio: 'ignore' });
     try {
-      await page.waitForSelector('#jobs .job:first-child .tag.ok', { timeout: 40000 });
+      await page.waitForSelector('#jobs .job:first-child .tag.ok', { timeout: 90000 });
       await page.click('#jobs .job:first-child');
       await page.waitForSelector('#filebtns button', { timeout: 15000 });
       const labels = await page.locator('#filebtns button').allTextContents();
@@ -213,14 +228,21 @@ Worker('${baseUrl}', cfg['token'], open_store(cfg), name='gpu-e2e', poll=0.3, hb
     await page.fill('#rpi-testo', 'ciao dal browser');
     await page.fill('#rpi-ripetizioni', '3');
     await page.click('#btn-next2');
+    assert(await page.locator('#wiz-2').isVisible(), 'GitHub: il file obbligatorio mancante blocca il passo successivo');
+    const dataFile = path.join(proj, 'e2e_dati.txt');
+    fs.writeFileSync(dataFile, 'uno\ndue\ntre\n');
+    await page.locator('#drop-rpi-file input[type=file]').setInputFiles(dataFile);
+    await page.waitForSelector('#drop-rpi-file .done:not(.hide)', { timeout: 15000 });
+    assert((await page.locator('#drop-rpi-file .done').textContent()).includes('e2e_dati.txt'), 'GitHub: file caricato dal computer nel campo «File di dati»');
+    await page.click('#btn-next2');
     const sum = await page.locator('#summary').textContent();
-    assert(sum.includes('o/demo') && sum.includes('ciao dal browser') && sum.includes('Kaggle'), 'GitHub: riepilogo con progetto, valori e Kaggle');
+    assert(sum.includes('o/demo') && sum.includes('ciao dal browser') && sum.includes('e2e_dati.txt') && sum.includes('Kaggle'), 'GitHub: riepilogo con progetto, valori e Kaggle');
     await page.click('#btn-run');
     await page.waitForSelector('#jobs .job:first-child .tag.ok', { timeout: 90000 });
     await page.waitForFunction(() => document.querySelector('#results').textContent.includes('Completato in'), null, { timeout: 30000 });
     assert(true, 'GitHub: risultato «Completato» mostrato nel pannello Risultati');
     const [dl4] = await Promise.all([page.waitForEvent('download'), page.locator('#filebtns button', { hasText: 'result.txt' }).click()]);
-    assert(fs.readFileSync(await dl4.path(), 'utf8') === 'ciao dal browser\nciao dal browser\nciao dal browser\n', 'GitHub: file scaricato = risultato del programma eseguito');
+    assert(fs.readFileSync(await dl4.path(), 'utf8') === 'ciao dal browser\nciao dal browser\nciao dal browser\nrighe nel file di input: 3\n', 'GitHub: il file trascinato dal PC è arrivato al programma (3 righe) e il risultato si scarica');
     await page.screenshot({ path: path.join(shots, '10_repo_risultato.png'), fullPage: true });
 
     // 7. ricarica pagina: resta autenticato

@@ -120,7 +120,11 @@ def validate_values(plan, values):
                 raise ValueError(f"«{it['label']}» deve essere un numero.") from None
         if it["type"] == "choice" and v and v not in it["choices"]:
             raise ValueError(f"«{it['label']}»: scegli uno dei valori proposti.")
-        if it["type"] == "url" and v:
+        if it["type"] == "url" and v.startswith("upload:"):
+            from core import uploads
+            if not uploads.path_for(uploads.parse_ref(v)):
+                raise ValueError(f"«{it['label']}»: il file caricato non è più disponibile, caricalo di nuovo.")
+        elif it["type"] == "url" and v:
             if not re.match(r"^https?://\S+$", v):
                 raise ValueError(f"«{it['label']}» deve essere un link che inizia con https://")
             from core.linkfix import direct_url

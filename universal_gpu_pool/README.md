@@ -54,7 +54,7 @@ Il token di accesso è in `config/local_config.yaml`. Nessuno dei due file va co
 
 ## Test
 
-    python run_tests.py          # 79 test (backend API, router, worker, webapp via HTTP) + demo originali
+    python run_tests.py          # 96 test (backend API, router, worker, webapp via HTTP) + demo originali
     python run_tests.py --e2e    # + test nel browser su una copia pulita (Node + Playwright)
 
 I test usano un finto server OpenAI (`tests/fake_openai.py`): nessuna rete, nessuna chiave reale.
@@ -95,7 +95,10 @@ Se manca un account IA, l'analisi usa regole semplici (comandi d'esempio del REA
 - **Colab non è collegabile**: Google non offre un'interfaccia per avviarlo da un programma. Si usa Kaggle (che la offre).
 - **Non tutti i progetti funzionano al primo colpo**: dipendono da pesi enormi, versioni precise di librerie, interfacce web (gradio)…
   Se fallisce, in «Risultati» vedi le ultime righe del registro; «↻ Riprova» rilancia, e in «Dettagli tecnici» puoi correggere comandi.
-- **I file di input vanno dati come link diretto** (Dropbox con `?dl=1`, Drive pubblico…): il caricamento dal computer non c'è ancora.
+- **File dal tuo computer: si trascinano nella webapp** (zona tratteggiata «Trascina qui un file», nel modo 3D e in ogni campo «link a un file»;
+  fino a 5 GB). Il file va prima al programma sul tuo PC, che lo carica come **dataset privato e temporaneo** nel tuo account Kaggle; il notebook lo
+  trova da solo e, a fine lavoro, il dataset viene cancellato. In alternativa si può incollare un link (anche quelli di Drive/Dropbox).
+  Non verificato su Kaggle reale: i tempi di elaborazione del dataset e la posizione in cui Kaggle lo monta (lo script la cerca da solo).
 - **Esegui solo progetti di cui ti fidi**: girano nel tuo account Kaggle (sandbox di Kaggle, non sul tuo PC).
 - Solo repository **pubblici**. GitHub concede 60 analisi/ora senza account (variabile `GITHUB_TOKEN` per alzare il limite).
 - Kaggle: 2 sessioni GPU in contemporanea, 9 ore massime ciascuna. L'annullamento di un lavoro dalla webapp non ferma il notebook già partito.

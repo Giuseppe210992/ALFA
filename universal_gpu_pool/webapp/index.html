@@ -127,6 +127,13 @@ details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
 .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes sp{to{transform:rotate(360deg)}}
 
+/* trascina file */
+.drop{margin-top:8px;border:2px dashed var(--line);border-radius:12px;padding:14px;text-align:center;color:var(--mut);cursor:pointer;font-size:.88rem;transition:.15s}
+.drop:hover,.drop.over{border-color:var(--acc);background:rgba(91,140,255,.08);color:var(--fg)}
+.drop .done{color:var(--ok);font-weight:600;word-break:break-all}
+.drop .x{margin-left:8px;color:var(--bad);cursor:pointer}
+.drop .bar{margin:8px 0 0}
+
 /* login */
 .login-box{max-width:400px;margin:12vh auto 0}
 .login-box .card{padding:22px}
@@ -342,15 +349,17 @@ details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
               <option value="video" selected>Un video (mp4, mov…)</option>
               <option value="images">Uno ZIP di foto (jpg/png)</option>
             </select>
-            <label for="d3-url">Link al file</label>
-            <input id="d3-url" type="text" placeholder="Incolla il link (Google Drive, Dropbox, …)">
+            <label>File dal tuo computer</label>
+            <div class="drop" id="d3-drop"></div>
+            <label for="d3-url" style="margin-top:12px">…oppure incolla un link</label>
+            <input id="d3-url" type="text" placeholder="Link (Google Drive, Dropbox, …)">
             <label for="d3-fps">Fotogrammi al secondo da usare (solo video)</label>
             <select id="d3-fps">
               <option value="5">5 — veloce</option>
               <option value="10" selected>10 — consigliato</option>
               <option value="15">15 — più dettagliato</option>
             </select>
-            <p class="hint">Va bene il link che copi da <b>Google Drive</b> («Condividi → Chiunque abbia il link») o da <b>Dropbox</b>: lo converto io. Per le foto serve <b>uno ZIP</b>, non una cartella. Risultato: <b>scene.glb</b> (nuvola di punti 3D) e le pose della camera, scaricabili da «Risultati». Richiede l'account Kaggle collegato.</p>
+            <p class="hint">Puoi <b>trascinare qui il file</b> (video, oppure uno ZIP di foto) o incollare un link: va bene quello che copi da <b>Google Drive</b> («Condividi → Chiunque abbia il link») o da <b>Dropbox</b>: lo converto io. Per le foto serve <b>uno ZIP</b>, non una cartella. Risultato: <b>scene.glb</b> (nuvola di punti 3D) e le pose della camera, scaricabili da «Risultati». Richiede l'account Kaggle collegato.</p>
           </div>
           <!-- local -->
           <div id="form-local" class="hide">
@@ -708,6 +717,74 @@ $('#btn-prov-reset').onclick = async () => {
   catch (e) { toast('Errore: ' + e.message); }
 };
 
+/* ---------------- trascina un file dal PC ---------------- */
+function uploadFile(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open('POST', '/uploads?name=' + encodeURIComponent(file.name));
+    x.setRequestHeader('X-Pool-Token', tok);
+    x.setRequestHeader('Content-Type', 'application/octet-stream');
+    x.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    x.onload = () => {
+      let j = {}; try { j = JSON.parse(x.responseText); } catch (e) {}
+      x.status === 200 ? resolve(j) : reject(new Error(j.error || ('errore ' + x.status)));
+    };
+    x.onerror = () => reject(new Error('connessione interrotta'));
+    x.send(file);
+  });
+}
+function fmtSize(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+
+/* Zona «trascina qui»: ritorna {get(), clear()}. onChange(info|null) a ogni caricamento/rimozione. */
+function attachDrop(zone, onChange) {
+  zone.innerHTML = '<div class="msg">📎 Trascina qui un file dal tuo computer <span class="muted">oppure clicca per sceglierlo</span></div>' +
+    '<div class="bar hide"><i style="width:0%"></i></div><div class="done hide"></div><input type="file" class="hide">';
+  const msg = zone.querySelector('.msg'), bar = zone.querySelector('.bar'), done = zone.querySelector('.done'), inp = zone.querySelector('input');
+  let info = null, busy = false;
+  const api = { get: () => info, clear };
+  function clear() {
+    info = null; done.classList.add('hide'); msg.classList.remove('hide'); bar.classList.add('hide'); inp.value = '';
+    if (onChange) onChange(null);
+  }
+  async function take(file) {
+    if (!file || busy) return;
+    if (file.size > 5e9) { toast('File troppo grande (massimo 5 GB).'); return; }
+    busy = true; msg.classList.add('hide'); done.classList.add('hide'); bar.classList.remove('hide');
+    const fill = bar.querySelector('i'); fill.style.width = '0%';
+    try {
+      const r = await uploadFile(file, f => { fill.style.width = Math.round(f * 100) + '%'; });
+      info = r; bar.classList.add('hide');
+      done.innerHTML = '✓ ' + escapeHtml(r.name) + ' (' + fmtSize(r.size) + ') <span class="x" title="Rimuovi">✕ rimuovi</span>';
+      done.classList.remove('hide');
+      done.querySelector('.x').onclick = ev => { ev.stopPropagation(); clear(); };
+      if (onChange) onChange(info);
+    } catch (e) {
+      bar.classList.add('hide'); msg.classList.remove('hide'); toast('Caricamento non riuscito: ' + e.message, 5000);
+    } finally { busy = false; }
+  }
+  zone.addEventListener('click', ev => { if (!ev.target.closest('.x') && !busy) inp.click(); });
+  inp.addEventListener('click', ev => ev.stopPropagation());
+  inp.onchange = () => take(inp.files[0]);
+  ['dragenter', 'dragover'].forEach(t => zone.addEventListener(t, ev => { ev.preventDefault(); zone.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(t => zone.addEventListener(t, ev => { ev.preventDefault(); zone.classList.remove('over'); }));
+  zone.addEventListener('drop', ev => take(ev.dataTransfer.files[0]));
+  return api;
+}
+// evita che il browser apra il file se lo si lascia fuori dalle zone
+['dragover', 'drop'].forEach(t => window.addEventListener(t, ev => ev.preventDefault()));
+
+let d3Drop = null;
+function initDrops() {
+  d3Drop = attachDrop($('#d3-drop'), info => {
+    if (info) {
+      const n = info.name.toLowerCase();
+      $('#d3-kind').value = /\.(zip)$/.test(n) ? 'images' : 'video';
+      $('#d3-url').value = '';
+    }
+  });
+  $('#d3-url').addEventListener('input', () => { if ($('#d3-url').value.trim() && d3Drop.get()) d3Drop.clear(); });
+}
+
 /* ---------------- GPU (Kaggle) ---------------- */
 let gpu = null;
 async function loadGpu() {
@@ -801,10 +878,19 @@ function renderRepoPlan() {
     else if (it.type === 'bool') ctl = `<label class="check"><input type="checkbox" id="${id}" ${it.default === '1' || it.default === 'true' ? 'checked' : ''}> ${escapeHtml(it.label)}</label>`;
     else if (it.type === 'number') ctl = `<input id="${id}" type="number" step="any" value="${escapeHtml(it.default || '')}">`;
     else ctl = `<input id="${id}" type="${it.type === 'url' ? 'url' : 'text'}" value="${escapeHtml(it.default || '')}" placeholder="${it.type === 'url' ? 'https://… (link diretto al file)' : ''}" autocomplete="off">`;
+    const isUrl = it.type === 'url';
     d.innerHTML = (it.type === 'bool' ? '' : `<label for="${id}" style="margin-top:0">${escapeHtml(it.label)}${it.required ? '' : ' <span class="muted">(facoltativo)</span>'}</label>`) + ctl +
       (it.help ? `<div class="hint">${escapeHtml(it.help)}</div>` : '') +
-      (it.type === 'url' ? '<div class="hint">Serve un link diretto al file (es. condiviso da Dropbox con ?dl=1 o Google Drive pubblico): il caricamento di file dal computer non è ancora disponibile.</div>' : '');
+      (isUrl ? '<div class="drop" id="drop-' + id + '"></div><div class="hint">Trascina un file dal computer oppure incolla un link (anche quello copiato da Google Drive o Dropbox).</div>' : '');
     box.appendChild(d);
+    if (isUrl) {
+      const inp = d.querySelector('#' + id);
+      const ctl = attachDrop(d.querySelector('#drop-' + id), info => {
+        if (info) { inp.dataset.upload = info.id; inp.dataset.uploadName = info.name; inp.value = ''; inp.placeholder = '📎 ' + info.name; }
+        else { delete inp.dataset.upload; delete inp.dataset.uploadName; inp.placeholder = 'https://… (link al file)'; }
+      });
+      inp.addEventListener('input', () => { if (inp.value.trim() && inp.dataset.upload) ctl.clear(); });
+    }
   });
   $('#rp-setup').value = plan.setup.join('\n');
   $('#rp-run').value = plan.run;
@@ -878,12 +964,14 @@ function validateStep2() {
     for (const it of repoCtx.plan.inputs) {
       const el = $('#rpi-' + it.key);
       if (!el) continue;
+      const up = !!el.dataset.upload;
       const v = el.type === 'checkbox' ? '1' : el.value.trim();
-      if (it.required && !v && it.type !== 'bool' && !it.default) { toast('Compila: ' + it.label); el.focus(); return false; }
-      if (it.type === 'url' && v && !/^https?:\/\/\S+$/i.test(v)) { toast('«' + it.label + '» deve essere un link che inizia con https://'); el.focus(); return false; }
+      if (it.required && !v && !up && it.type !== 'bool' && !it.default) { toast('Compila: ' + it.label + (it.type === 'url' ? ' (trascina un file o incolla un link)' : '')); el.focus(); return false; }
+      if (it.type === 'url' && v && !up && !/^https?:\/\/\S+$/i.test(v)) { toast('«' + it.label + '» deve essere un link che inizia con https://'); el.focus(); return false; }
     }
   }
-  if (mode === '3d') {
+  if (mode === '3d' && d3Drop && d3Drop.get()) { /* file trascinato: ok */ }
+  else if (mode === '3d') {
     const u = $('#d3-url').value.trim();
     if (!/^https?:\/\/\S+$/i.test(u)) { toast('Incolla un link che inizia con https://'); return false; }
     if (/drive\.google\.com\/drive\/folders\//i.test(u)) { toast('Questa è una cartella di Drive: crea uno ZIP con le foto e incolla il link dello ZIP.'); return false; }
@@ -906,7 +994,8 @@ function buildSummary() {
       <b>Istruzione:</b> <span class="muted">${escapeHtml($('#batch-instr').value || '(nessuna — usa il testo così com\'è)')}</span>`;
   } else if (mode === 'repo') {
     const r = repoCtx.repo, v = repoValues();
-    const vals = repoCtx.plan.inputs.map(i => `<li><b>${escapeHtml(i.label)}:</b> <span class="muted">${escapeHtml((v[i.key] || '—').slice(0, 120))}</span></li>`).join('');
+    const shown = i => { const e = $('#rpi-' + i.key); return e && e.dataset.uploadName ? '📎 ' + e.dataset.uploadName : (v[i.key] || '—'); };
+    const vals = repoCtx.plan.inputs.map(i => `<li><b>${escapeHtml(i.label)}:</b> <span class="muted">${escapeHtml(shown(i).slice(0, 120))}</span></li>`).join('');
     const k = gpu && gpu.kaggle;
     s.innerHTML = `<b>Progetto:</b> ${escapeHtml(r.owner)}/${escapeHtml(r.repo)}<br>
       <b>Cosa fa:</b> <span class="muted">${escapeHtml(repoCtx.plan.summary || r.description || '')}</span><br>
@@ -919,7 +1008,7 @@ function buildSummary() {
   } else if (mode === '3d') {
     s.innerHTML = `<b>Tipo:</b> Ricostruzione 3D (LingBot-Map)<br>
       <b>Sorgente:</b> ${$('#d3-kind').value === 'video' ? 'video' : 'ZIP di foto'}<br>
-      <b>Link:</b> <span class="muted">${escapeHtml($('#d3-url').value.trim().slice(0, 120))}</span>`;
+      <b>${d3Drop && d3Drop.get() ? 'File' : 'Link'}:</b> <span class="muted">${escapeHtml(d3Drop && d3Drop.get() ? '📎 ' + d3Drop.get().name : $('#d3-url').value.trim().slice(0, 120))}</span>`;
   } else if (mode === 'local') {
     s.innerHTML = `<b>Tipo:</b> Modello su GPU del pool<br>
       <b>Modello:</b> ${escapeHtml($('#local-model').value)}<br>
@@ -950,7 +1039,7 @@ function repoValues() {
   (repoCtx ? repoCtx.plan.inputs : []).forEach(it => {
     const el = $('#rpi-' + it.key);
     if (!el) return;
-    out[it.key] = el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value.trim();
+    out[it.key] = el.type === 'checkbox' ? (el.checked ? '1' : '0') : (el.dataset.upload ? 'upload:' + el.dataset.upload : el.value.trim());
   });
   return out;
 }
@@ -968,7 +1057,7 @@ function buildPayload() {
   }
   if (mode === '3d') {
     const kind = $('#d3-kind').value;
-    const url = $('#d3-url').value.trim();
+    const url = d3Drop && d3Drop.get() ? 'upload:' + d3Drop.get().id : $('#d3-url').value.trim();
     return {
       adapter: 'lingbot_map',
       items: [{ id: 'scena', [kind]: url }],
@@ -1315,6 +1404,7 @@ $('#btn-logout').onclick = () => {
 $('#btn-refresh').onclick = () => { tick(); tickSettings(); };
 $('#tok').addEventListener('keydown', e => { if (e.key === 'Enter') $('#btn-login').click(); });
 
+initDrops();
 if (tok) { enter(); }
 else showLogin();
 setInterval(tick, 2500);

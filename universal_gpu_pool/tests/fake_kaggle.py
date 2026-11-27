@@ -20,8 +20,10 @@ USERS = {"good-token": "tester"}
 
 
 class FakeKaggle:
-    def __init__(self, no_phone=False, queue_s=0.3, page_size=4, timeout_kill=None, port=0):
+    def __init__(self, no_phone=False, queue_s=0.3, page_size=4, timeout_kill=None, port=0, unzip=True, dataset_delay=0.3):
         self.no_phone, self.queue_s, self.page_size = no_phone, queue_s, page_size
+        self.unzip, self.dataset_delay = unzip, dataset_delay        # unzip: Kaggle estrae gli ZIP dei dataset
+        self.blobs, self.datasets, self.puts = {}, {}, []
         self.kernels = {}        # (user, slug) -> dict
         self.calls = []          # (service/method, auth)
         self.root = Path(tempfile.mkdtemp(prefix="fake_kaggle_"))
@@ -50,6 +52,23 @@ class FakeKaggle:
                         return self._send(200, None, raw=p.read_bytes(), ctype="application/octet-stream")
                 return self._send(404, {"code": 404, "message": "not found"})
 
+            def do_PUT(self):
+                n = int(self.headers.get("Content-Length") or 0)
+                token = self.path.rsplit("/", 1)[-1]
+                if token not in fake.blobs:
+                    return self._send(404, {"code": 404, "message": "unknown upload"})
+                data = b""
+                while len(data) < n:
+                    chunk = self.rfile.read(min(1 << 16, n - len(data)))
+                    if not chunk:
+                        break
+                    data += chunk
+                if len(data) != n or n != fake.blobs[token]["size"]:
+                    return self._send(400, {"code": 400, "message": "size mismatch"})
+                fake.blobs[token]["data"] = data
+                fake.puts.append((token, n))
+                return self._send(200, {})
+
             def do_POST(self):
                 n = int(self.headers.get("Content-Length") or 0)
                 body = json.loads(self.rfile.read(n) or b"{}")
@@ -72,6 +91,33 @@ class FakeKaggle:
                 if (svc, method) == ("security.OAuthService", "IntrospectToken"):
                     u = USERS.get(body.get("token"))
                     return self._send(200, {"active": bool(u), "username": u or ""})
+                if (svc, method) == ("blobs.BlobApiService", "StartBlobUpload"):
+                    assert body.get("type") == "DATASET" and body.get("name") and body.get("contentLength") > 0
+                    tok = "tok" + str(len(fake.blobs) + 1) + os.urandom(3).hex()
+                    fake.blobs[tok] = {"name": body["name"], "size": body["contentLength"], "data": None}
+                    return self._send(200, {"token": tok, "createUrl": f"http://127.0.0.1:{fake.port}/upload/{tok}"})
+                if svc == "datasets.DatasetApiService":
+                    key = (body.get("ownerSlug"), body.get("slug") or body.get("datasetSlug"))
+                    if method == "CreateDataset":
+                        assert body.get("isPrivate") is True and body.get("licenseName") and body.get("title")
+                        assert key[0] == USERS[token] and key[1] == "-".join(body["title"].lower().split())
+                        files = []
+                        for f in body.get("files", []):
+                            b = fake.blobs.get(f.get("token"))
+                            if not b or b["data"] is None:
+                                return self._send(400, {"code": 400, "message": "file token without uploaded data"})
+                            files.append((b["name"], b["data"]))
+                        fake.datasets[key] = {"files": files, "t0": time.time()}
+                        return self._send(200, {"ref": f"{key[0]}/{key[1]}", "status": "ok", "url": "https://x"})
+                    if method == "GetDatasetStatus":
+                        d = fake.datasets.get(key)
+                        if not d:
+                            return self._send(404, {"code": 404, "message": "dataset not found"})
+                        return self._send(200, {"status": "READY" if time.time() - d["t0"] >= fake.dataset_delay else "BLOBS_RECEIVED"})
+                    if method == "DeleteDataset":
+                        fake.datasets.pop(key, None)
+                        return self._send(200, {})
+                    return self._send(404, {"code": 404, "message": "unknown method"})
                 if svc != "kernels.KernelsApiService":
                     return self._send(404, {"code": 404, "message": "unknown service"})
                 if method == "GetAcceleratorQuotaStatistics":
@@ -97,6 +143,21 @@ class FakeKaggle:
                     k = {"dir": d, "t0": time.time(), "body": body, "proc": None, "rc": None}
                     fake.kernels[(user, slug)] = k
                     env = dict(os.environ, GPOOL_WORKDIR=str(d / "working"), GPOOL_TMPDIR=str(d / "tmp"))
+                    k["datasets"] = body.get("datasetDataSources") or []
+                    if k["datasets"]:                       # monta i dataset come /kaggle/input/<slug>/...
+                        import zipfile, io
+                        inp = d / "input"
+                        for ref in k["datasets"]:
+                            ds = fake.datasets.get(tuple(ref.split("/", 1)))
+                            assert ds, f"dataset sconosciuto: {ref}"
+                            root = inp / ref.split("/", 1)[1]
+                            root.mkdir(parents=True, exist_ok=True)
+                            for name, data in ds["files"]:
+                                if fake.unzip and name.lower().endswith(".zip"):
+                                    zipfile.ZipFile(io.BytesIO(data)).extractall(root / Path(name).stem)
+                                else:
+                                    (root / name).write_bytes(data)
+                        env["GPOOL_INPUT_DIR"] = str(inp)
                     log = open(d / "kernel.log", "w")
 
                     def go():

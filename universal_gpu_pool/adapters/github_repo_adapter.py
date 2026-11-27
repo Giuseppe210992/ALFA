@@ -40,14 +40,46 @@ class GitHubRepoAdapter(BaseAdapter):
         if not plan["run"]:
             raise ValueError("manca il comando da eseguire (apri «Dettagli tecnici» e scrivilo)")
         values = validate_values(plan, params.get("values") or {})
-        downloads = {i["key"]: values[i["key"]] for i in plan["inputs"] if i["type"] == "url" and values.get(i["key"])}
-        plain = {k: v for k, v in values.items() if k not in downloads}
+        from core import uploads
+        downloads, up = {}, {}
+        for i in plan["inputs"]:
+            v = values.get(i["key"])
+            if i["type"] == "url" and v:
+                uid = uploads.parse_ref(v)
+                if uid:
+                    up[i["key"]] = {"id": uid, "name": uploads.path_for(uid).name}
+                else:
+                    downloads[i["key"]] = v
+        plain = {k: v for k, v in values.items() if k not in downloads and k not in up}
         opts = params.get("options") or {}
         cfg = {"repo_url": f"https://github.com/{owner}/{repo}", "clone_url": github_repo.clone_url(owner, repo),
                "ref": ref, "setup": plan["setup"], "run": plan["run"], "values": plain, "downloads": downloads,
                "outputs": plan["outputs"], "timeout_s": int(plan["timeout_min"]) * 60,
-               "setup_timeout_s": 2400, "gpu": bool(opts.get("gpu", plan["gpu"])), "title": plan["title"] or repo, "files": {}}
+               "setup_timeout_s": 2400, "gpu": bool(opts.get("gpu", plan["gpu"])), "title": plan["title"] or repo, "files": {},
+               "uploads": up}
         return [{"id": "step_001", "depends_on": [], "payload": {"cfg": cfg}}]
+
+    # ---------- file caricati dall'utente ----------
+    def _upload_inputs(self, client, cfg, ctx):
+        """Carica i file trascinati dall'utente come dataset PRIVATO e temporaneo del suo account Kaggle."""
+        from core import uploads
+        paths = []
+        for k, v in cfg["uploads"].items():
+            p = uploads.path_for(v["id"])
+            if not p:
+                raise KaggleError(f"il file caricato per «{k}» non è più disponibile: caricalo di nuovo dalla webapp")
+            paths.append(p)
+        total = sum(p.stat().st_size for p in paths) or 1
+        done = [0]
+        tokens = []
+        for p in paths:
+            base = done[0]
+            tokens.append(client.upload_blob(p, progress=lambda n, b=base: ctx.progress(0.02 + 0.06 * min(1.0, (b + n) / total))))
+            done[0] += p.stat().st_size
+        ctx.progress(0.08)
+        user, slug = client.create_dataset("GPool upload " + uuid.uuid4().hex[:8], tokens)
+        self._dataset = (user, slug)
+        return user, slug
 
     # ---------- esecuzione ----------
     def run_step(self, ctx):
@@ -61,9 +93,15 @@ class GitHubRepoAdapter(BaseAdapter):
         try:
             client = KaggleClient.from_env()
             ctx.progress(0.02)
+            datasets = []
+            if cfg.get("uploads"):
+                ds_user, ds_slug = self._upload_inputs(client, cfg, ctx)
+                datasets = [f"{ds_user}/{ds_slug}"]
+            script_cfg = dict(cfg, uploads={k: v["name"] for k, v in (cfg.get("uploads") or {}).items()})
             title = "GPool " + uuid.uuid4().hex[:8]
-            user, slug = client.push_script(title, build_script(cfg), gpu=cfg.get("gpu", True), internet=True,
-                                            timeout_s=min(int(cfg["timeout_s"]) + cfg["setup_timeout_s"] + 600, 32400))
+            user, slug = client.push_script(title, build_script(script_cfg), gpu=cfg.get("gpu", True), internet=True,
+                                            timeout_s=min(int(cfg["timeout_s"]) + cfg["setup_timeout_s"] + 600, 32400),
+                                            datasets=datasets)
             print(f"[github_repo] notebook Kaggle: {user}/{slug}", flush=True)
             ctx.progress(0.08)
             budget = int(cfg["timeout_s"]) + cfg["setup_timeout_s"] + 900
@@ -107,6 +145,9 @@ class GitHubRepoAdapter(BaseAdapter):
         finally:
             if client and user and slug and opts.get("delete_after", True):
                 client.delete(user, slug)
+            if client and getattr(self, "_dataset", None):
+                client.delete_dataset(*self._dataset)         # il dataset temporaneo con i tuoi file non resta su Kaggle
+                self._dataset = None
 
         outcome["seconds"] = round(time.time() - t0, 1)
         names = sorted(p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file() and p.name != "results.jsonl")

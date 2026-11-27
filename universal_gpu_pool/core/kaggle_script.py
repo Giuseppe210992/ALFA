@@ -74,8 +74,23 @@ def render(template, values):
                   lambda m: shlex.quote(str(vals[m.group(1)])) if m.group(1) in vals else m.group(0), template)
 
 
-def fetch(url, dest):
-    req = urllib.request.Request(url, headers={"User-Agent": "gpu-pool/1.1"})
+BACKOFF = float(os.environ.get("GPOOL_FETCH_BACKOFF", "3"))      # secondi tra i tentativi (ridotto nei test)
+BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
+
+def _looks_like_html(path):
+    try:
+        if os.path.getsize(path) > 3_000_000:
+            return False
+        with open(path, "rb") as f:
+            head = f.read(600).lstrip().lower()
+        return head.startswith((b"<!doctype html", b"<html", b"<head", b"<?xml"))
+    except OSError:
+        return False
+
+
+def _fetch_urllib(url, dest):
+    req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA, "Accept": "*/*"})
     n = 0
     with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
         while True:
@@ -87,6 +102,102 @@ def fetch(url, dest):
                 raise RuntimeError("file di input oltre 3 GB")
             f.write(b)
     return n
+
+
+def fetch(url, dest):
+    """Scarica un file con più strategie: urllib (3 tentativi), poi curl, poi gdown per Google Drive.
+    Se il sito restituisce una pagina web invece del file, lo dice chiaramente."""
+    errs = []
+    for i in range(3):
+        try:
+            n = _fetch_urllib(url, dest)
+            break
+        except Exception as e:
+            errs.append("urllib: %s" % e)
+            log("download non riuscito (tentativo %d/3): %s" % (i + 1, e))
+            time.sleep(BACKOFF * (i + 1))
+    else:
+        n = 0
+        if shutil.which("curl"):
+            log("provo con curl…")
+            rc = subprocess.call(["curl", "-L", "--fail", "--retry", "3", "--retry-delay", str(max(1, int(BACKOFF))), "-sS", "-o", dest, url])
+            if rc == 0 and os.path.exists(dest) and os.path.getsize(dest) > 0:
+                n = os.path.getsize(dest)
+            else:
+                errs.append("curl: codice %s" % rc)
+        m = re.search(r"[?&]id=([\w-]{10,})", url) if "google.com" in url else None
+        if not n and m:
+            log("provo con gdown (Google Drive)…")
+            subprocess.call([sys.executable, "-m", "pip", "install", "-q", "gdown"])
+            rc = subprocess.call([sys.executable, "-m", "gdown", "--id", m.group(1), "-O", dest, "--quiet"])
+            if rc == 0 and os.path.exists(dest) and os.path.getsize(dest) > 0:
+                n = os.path.getsize(dest)
+            else:
+                errs.append("gdown: codice %s" % rc)
+        if not n:
+            host = urlparse(url).hostname or url
+            log("diagnostica di rete verso %s:" % host)
+            subprocess.call("curl -sS -I -L -m 30 %s 2>&1 | head -25" % shlex.quote(url), shell=True)
+            raise RuntimeError("non riesco a scaricare il file di input da %s (%s). Se è un link di Google Drive prova con "
+                               "Dropbox o un altro servizio; controlla che sia condiviso con «Chiunque abbia il link»." % (host, "; ".join(errs)[:300]))
+    if _looks_like_html(dest):
+        raise RuntimeError("il link ha restituito una pagina web invece del file (di solito Google Drive chiede un permesso o una "
+                           "conferma). Condividi il file con «Chiunque abbia il link», oppure usa Dropbox / un link diretto.")
+    return n
+
+
+INPUT_ROOT = os.environ.get("GPOOL_INPUT_DIR", "/kaggle/input")
+
+
+def descend(d):
+    """Scende finché la cartella contiene una sola sottocartella e nessun file (percorsi annidati, ZIP già estratti)."""
+    while True:
+        try:
+            items = [x for x in os.listdir(d) if not x.startswith(("__MACOSX", "."))]
+        except OSError:
+            return d
+        dirs = [x for x in items if os.path.isdir(os.path.join(d, x))]
+        if len(items) == 1 and len(dirs) == 1:
+            d = os.path.join(d, dirs[0])
+        else:
+            return d
+
+
+def find_upload(name):
+    """Dove Kaggle ha messo il file caricato: file con lo stesso nome, oppure (se uno ZIP è stato
+    estratto automaticamente) la cartella con lo stesso nome, oppure l'unico dataset presente."""
+    stem = os.path.splitext(name)[0]
+    for dp, dn, fn in os.walk(INPUT_ROOT):
+        if name in fn:
+            return os.path.join(dp, name)
+    for dp, dn, fn in os.walk(INPUT_ROOT):
+        if stem in dn:
+            return descend(os.path.join(dp, stem))
+    if os.path.isdir(INPUT_ROOT):
+        top = descend(INPUT_ROOT)
+        if top != INPUT_ROOT and os.listdir(top):
+            return top
+    raise RuntimeError("non trovo il file caricato «%s» dentro Kaggle (elaborazione del dataset incompleta?)" % name)
+
+
+def materialize(key, path):
+    """ZIP -> cartella estratta; cartella -> si scende nella sottocartella unica; altro file -> com'è."""
+    import zipfile
+    if os.path.isfile(path) and path.lower().endswith(".zip"):
+        if not zipfile.is_zipfile(path):
+            raise RuntimeError("il file «%s» non è uno ZIP valido" % os.path.basename(path))
+        d = os.path.join(INP, key)
+        real = os.path.realpath(d)
+        with zipfile.ZipFile(path) as z:
+            for m in z.infolist():
+                t = os.path.realpath(os.path.join(d, m.filename))
+                if os.path.commonpath([real, t]) != real:
+                    raise RuntimeError("ZIP non sicuro")
+            z.extractall(d)
+        return descend(d)
+    if os.path.isdir(path):
+        return descend(path)
+    return path
 
 
 def snapshot(root):
@@ -215,6 +326,8 @@ def main():
             if ext.lower() == ".zip":      # una cartella di foto: si passa la cartella estratta
                 import zipfile
                 d = os.path.join(INP, k)
+                if not zipfile.is_zipfile(dest):
+                    raise RuntimeError("il file scaricato non è uno ZIP valido (link sbagliato o file non condiviso pubblicamente)")
                 with zipfile.ZipFile(dest) as z:
                     for m in z.infolist():
                         t = os.path.realpath(os.path.join(d, m.filename))
@@ -224,6 +337,10 @@ def main():
                 subs = [x for x in os.listdir(d) if not x.startswith("__MACOSX")]
                 dest = os.path.join(d, subs[0]) if len(subs) == 1 and os.path.isdir(os.path.join(d, subs[0])) else d
             values[k] = dest
+        for k, name in (CFG.get("uploads") or {}).items():
+            src = find_upload(name)
+            log("file caricato «%s» trovato in %s" % (name, src))
+            values[k] = materialize(k, src)
 
         # 4-5. esecuzione
         res["stage"] = "run"

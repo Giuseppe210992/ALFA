@@ -109,6 +109,42 @@ def post_json(url, payload, headers=None, **kw):
     return json.loads(body.decode("utf-8") or "{}")
 
 
+class _ProgressFile:
+    """File in sola lettura che segnala i byte letti (per mostrare l'avanzamento di un caricamento)."""
+    def __init__(self, path, cb):
+        self._f = open(path, "rb")
+        self._cb, self._n = cb, 0
+
+    def read(self, n=-1):
+        b = self._f.read(n)
+        self._n += len(b)
+        if self._cb:
+            self._cb(self._n)
+        return b
+
+    def close(self):
+        self._f.close()
+
+
+def put_file(url, path, progress=None, timeout=600, headers=None):
+    """PUT di un intero file (corpo in streaming, senza caricarlo in memoria). Ritorna lo status HTTP."""
+    size = os.path.getsize(path)
+    pf = _ProgressFile(path, progress)
+    hdrs = {"User-Agent": UA, "Content-Length": str(size)}
+    hdrs.update(headers or {})
+    try:
+        req = urllib.request.Request(url, data=pf, headers=hdrs, method="PUT")
+        with _open(req, timeout) as r:
+            r.read()
+            return r.status
+    except urllib.error.HTTPError as e:
+        raise NetError(f"HTTP {e.code}", code=e.code, body=e.read()[:500].decode("utf-8", "replace")) from None
+    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+        raise NetError(_explain(e) or str(e)) from None
+    finally:
+        pf.close()
+
+
 def download(url, dest, headers=None, max_bytes=5_000_000_000, timeout=120, retries=2):
     """Scarica su file (a blocchi, scrittura atomica). Ritorna i byte scaricati."""
     dest = Path(dest)

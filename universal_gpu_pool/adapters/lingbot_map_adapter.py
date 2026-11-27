@@ -39,6 +39,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from adapters.base_adapter import BaseAdapter
+from core import uploads
 from core.linkfix import direct_url
 
 REPO_URL = "https://github.com/Robbyant/lingbot-map.git"
@@ -143,17 +144,25 @@ class LingBotMapAdapter(BaseAdapter):
                 raise ValueError(f"item {i}: indica esattamente uno tra 'video' e 'images'")
             key = "video" if it.get("video") else "images"
             url = str(it[key]).strip()
-            if not _is_url(url):
-                raise ValueError("per l'esecuzione su Kaggle serve un link (https://…) al video o allo ZIP di foto")
-            try:
-                url = direct_url(url)[0]
-            except ValueError as e:
-                raise ValueError(str(e))
+            up = {}
+            uid = uploads.parse_ref(url)
+            if uid:
+                path = uploads.path_for(uid)
+                if not path:
+                    raise ValueError("il file caricato non è più disponibile: caricalo di nuovo")
+                up = {key: {"id": uid, "name": path.name}}
+            elif not _is_url(url):
+                raise ValueError("per l'esecuzione su Kaggle serve un link (https://…) oppure un file trascinato dal PC")
+            else:
+                try:
+                    url = direct_url(url)[0]
+                except ValueError as e:
+                    raise ValueError(str(e))
             rc = lingbot_cfg({key: url}, opts)
             cfg = {"repo_url": f"https://github.com/{owner}/{repo}", "clone_url": github_repo.clone_url(owner, repo),
                    "ref": opts.get("repo_ref", ""), "setup": rc["setup"], "run": rc["run"], "values": {},
-                   "downloads": {rc["input_key"]: url}, "outputs": [], "timeout_s": rc["timeout_s"],
-                   "setup_timeout_s": 2400, "gpu": True, "title": rc["title"], "files": rc["files"]}
+                   "downloads": ({} if up else {rc["input_key"]: url}), "outputs": [], "timeout_s": rc["timeout_s"],
+                   "setup_timeout_s": 2400, "gpu": True, "title": rc["title"], "files": rc["files"], "uploads": up}
             steps.append({"id": f"step_{i + 1:03d}", "depends_on": [], "payload": {"cfg": cfg}})
         if not steps:
             raise ValueError("indica un video o uno ZIP di foto")

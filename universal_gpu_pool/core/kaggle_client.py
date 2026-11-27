@@ -18,6 +18,8 @@ from core import netutil
 DEFAULT_BASE = "https://api.kaggle.com"
 KERNELS = "kernels.KernelsApiService"
 OAUTH = "security.OAuthService"
+BLOBS = "blobs.BlobApiService"
+DATASETS = "datasets.DatasetApiService"
 TERMINAL = ("COMPLETE", "ERROR", "CANCEL_ACKNOWLEDGED")
 _STATUS_BY_NUM = {0: "QUEUED", 1: "RUNNING", 2: "COMPLETE", 3: "ERROR", 4: "CANCEL_REQUESTED",
                   5: "CANCEL_ACKNOWLEDGED", 6: "NEW_SCRIPT"}
@@ -117,13 +119,70 @@ class KaggleClient:
                 "refresh": r.get("quotaRefreshTime")}
 
     # ---------- kernel ----------
-    def push_script(self, title, text, gpu=True, internet=True, timeout_s=32400):
+    # ---------- file caricati dall'utente: dataset privato ----------
+    def upload_blob(self, path, progress=None, attempts=3):
+        """Carica un file sui server di Kaggle e ritorna il «token» da usare nella creazione del dataset."""
+        path = os.fspath(path)
+        size = os.path.getsize(path)
+        last = None
+        for i in range(attempts):
+            r = self.call(BLOBS, "StartBlobUpload", {"type": "DATASET", "name": os.path.basename(path), "contentLength": size,
+                                                    "lastModifiedEpochSeconds": int(os.path.getmtime(path))})
+            if not r.get("createUrl") or not r.get("token"):
+                raise KaggleError("Kaggle non ha fornito l'indirizzo di caricamento")
+            try:
+                code = netutil.put_file(r["createUrl"], path, progress=progress)
+                if code in (200, 201, 204):
+                    return r["token"]
+                last = f"HTTP {code}"
+            except netutil.NetError as e:
+                last = str(e)
+            time.sleep(2 * (i + 1))
+        raise KaggleError(f"caricamento del file su Kaggle non riuscito ({last})")
+
+    def create_dataset(self, title, tokens, timeout_s=900, poll=3.0):
+        """Crea un dataset PRIVATO con i file indicati (lista di token) e attende che sia pronto. -> (user, slug)."""
+        user = self.whoami()
+        slug = slugify(title)
+        r = self.call(DATASETS, "CreateDataset", {"ownerSlug": user, "slug": slug, "title": title, "licenseName": "CC0-1.0",
+                                                  "isPrivate": True, "files": [{"token": t} for t in tokens],
+                                                  "description": "File caricati da GPU Pool (temporaneo, viene cancellato)."}, timeout=120)
+        if r.get("error"):
+            raise KaggleError("Kaggle ha rifiutato il dataset: " + str(r["error"]))
+        t0 = time.time()
+        try:
+            return self._wait_dataset(user, slug, t0, timeout_s, poll)
+        except KaggleError:
+            self.delete_dataset(user, slug)          # niente dataset «orfani» nel tuo account
+            raise
+
+    def _wait_dataset(self, user, slug, t0, timeout_s, poll):
+        while True:
+            st = self.call(DATASETS, "GetDatasetStatus", {"ownerSlug": user, "datasetSlug": slug}).get("status", "")
+            st = str(st).split(".")[-1].upper()
+            if st == "READY":
+                return user, slug
+            if st in ("FAILED", "DELETED"):
+                raise KaggleError("Kaggle non è riuscito a elaborare il file caricato (formato non valido?)")
+            if time.time() - t0 > timeout_s:
+                raise KaggleError(f"Kaggle sta elaborando il file da troppo tempo (stato: {st})")
+            time.sleep(poll)
+
+    def delete_dataset(self, user, slug):
+        try:
+            self.call(DATASETS, "DeleteDataset", {"ownerSlug": user, "datasetSlug": slug}, retries=0)
+        except KaggleError:
+            pass
+
+    def push_script(self, title, text, gpu=True, internet=True, timeout_s=32400, datasets=None):
         """Crea/aggiorna un notebook privato di tipo script ed avvia l'esecuzione. Ritorna (username, slug)."""
         user = self.whoami()
         slug = slugify(title)
         payload = {"slug": f"{user}/{slug}", "newTitle": title, "text": text, "language": "python",
                    "kernelType": "script", "isPrivate": True, "enableGpu": bool(gpu),
                    "enableInternet": bool(internet), "sessionTimeoutSeconds": int(timeout_s)}
+        if datasets:
+            payload["datasetDataSources"] = list(datasets)
         r = self.call(KERNELS, "SaveKernel", payload, timeout=120)
         if r.get("error"):
             raise KaggleError("Kaggle ha rifiutato lo script: " + str(r["error"]))

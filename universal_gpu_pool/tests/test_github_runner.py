@@ -303,11 +303,12 @@ class AdapterTest(EnvCase):
     def setUp(self):
         self.out = Path(tempfile.mkdtemp(prefix="ghr_out_"))
         os.environ["KAGGLE_API_TOKEN"] = "good-token"
+        os.environ["GPOOL_FETCH_BACKOFF"] = "0.1"
         os.environ.pop("DEMO_FAIL", None)
 
     def tearDown(self):
         shutil.rmtree(self.out, ignore_errors=True)
-        os.environ.pop("KAGGLE_API_TOKEN", None); os.environ.pop("DEMO_FAIL", None)
+        os.environ.pop("KAGGLE_API_TOKEN", None); os.environ.pop("DEMO_FAIL", None); os.environ.pop("GPOOL_FETCH_BACKOFF", None)
 
     def params(self, **kw):
         p = {"repo_url": "https://github.com/o/demo", "plan": dict(PLAN), "values": {"testo": "ciao mondo", "ripetizioni": "3"},
@@ -366,6 +367,65 @@ class AdapterTest(EnvCase):
         _, rec, _ = self.run_adapter(self.params(plan=plan, values={"testo": "x", "file": fs.base + "/dati.txt"}))
         self.assertTrue(rec["ok"], rec)
         self.assertIn("righe nel file di input: 2", (self.out / "outputs" / "result.txt").read_text())
+
+    # ---- download dell'input da siti problematici (come il «Broken pipe» visto con Google Drive) ----
+    def _serve(self, behavior):
+        import socketserver, http.server
+        data = b"uno\ndue\ntre\n"
+        state = {"n": 0, "uas": []}
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                state["n"] += 1
+                ua = self.headers.get("User-Agent", "")
+                state["uas"].append(ua)
+                if behavior == "reset_twice" and state["n"] <= 2:
+                    self.connection.close(); return                      # connessione chiusa di colpo
+                if behavior == "only_curl" and not ua.startswith("curl"):
+                    self.connection.close(); return
+                body = (b"<!DOCTYPE html><html><body>Accedi per continuare</body></html>" if behavior == "html" else data)
+                self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers()
+                self.wfile.write(body)
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(lambda: (srv.shutdown(), srv.server_close()))
+        return f"http://127.0.0.1:{srv.server_address[1]}/dati.txt", state
+
+    def _run_with_input(self, url):
+        plan = dict(PLAN, run="python app.py --text {testo} --input {file} --out {OUT}", setup=[],
+                    inputs=[{"key": "testo", "label": "Testo", "type": "text"}, {"key": "file", "label": "File", "type": "url"}])
+        return self.run_adapter(self.params(plan=plan, values={"testo": "x", "file": url}))
+
+    def test_download_retries_after_connection_reset(self):
+        url, st = self._serve("reset_twice")
+        _, rec, _ = self._run_with_input(url)
+        self.assertTrue(rec["ok"], rec)
+        self.assertGreaterEqual(st["n"], 3)
+        self.assertTrue(st["uas"][-1].startswith("Mozilla/5.0"), "deve presentarsi come un browser")
+        self.assertIn("righe nel file di input: 3", (self.out / "outputs" / "result.txt").read_text())
+
+    def test_download_falls_back_to_curl(self):
+        import shutil as _sh
+        if not _sh.which("curl"):
+            self.skipTest("curl non installato")
+        url, st = self._serve("only_curl")
+        _, rec, _ = self._run_with_input(url)
+        self.assertTrue(rec["ok"], rec)
+        self.assertIn("provo con curl", (self.out / "run.log").read_text())
+
+    def test_html_page_instead_of_file_is_explained(self):
+        url, _ = self._serve("html")
+        _, rec, _ = self._run_with_input(url)
+        self.assertFalse(rec["ok"])
+        self.assertIn("pagina web invece del file", rec["error"]); self.assertIn("Chiunque abbia il link", rec["error"])
+
+    def test_unreachable_site_gives_actionable_error(self):
+        _, rec, _ = self._run_with_input("http://127.0.0.1:9/nessuno.txt")
+        self.assertFalse(rec["ok"])
+        self.assertIn("non riesco a scaricare il file di input", rec["error"]); self.assertIn("Dropbox", rec["error"])
 
     def test_program_failure_is_reported_not_raised(self):
         os.environ["DEMO_FAIL"] = "1"
@@ -552,6 +612,31 @@ class SystemTest(EnvCase):
         res = self.call("GET", f"/jobs/{r['job_id']}/results")[1]
         self.assertIn("non collegato", res["items"][0]["error"])
 
+    def test_6b_upload_endpoint(self):
+        import urllib.request, urllib.error
+        op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+        def post(path, data, token=TOKEN):
+            req = urllib.request.Request(self.base + path, data=data, method="POST",
+                                         headers={"X-Pool-Token": token, "Content-Type": "application/octet-stream"})
+            try:
+                with op.open(req) as r:
+                    return r.status, json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read())
+        code, r = post("/uploads?name=foto%20mie.zip", b"PK-finto-zip" * 1000)
+        self.assertEqual(code, 200, r)
+        self.assertEqual((r["name"], r["size"]), ("foto mie.zip", 12000))
+        from core import uploads
+        self.assertEqual(uploads.path_for(r["id"]).stat().st_size, 12000)
+        self.assertEqual(post("/uploads?name=a", b"x", token="sbagliato")[0], 401)
+        self.assertEqual(post("/uploads?name=a", b"")[0], 400)
+        self.router.cfg["max_upload_gb"] = 0.00001                      # 10 KB
+        code, r = post("/uploads?name=grande.bin", b"x" * 50_000)
+        self.assertEqual(code, 400); self.assertIn("troppo grande", r["error"])
+        self.router.cfg.pop("max_upload_gb")
+        self.assertEqual(self.call("GET", "/health")[0], 200)
+
     def test_7_webapp_has_github_and_gpu_ui(self):
         code, page = self.call("GET", "/", token=None)
         for needle in ('data-mode="repo"', "form-repo", "/repos/analyze", "/gpu/kaggle", "kaggle.com/settings/api"):
@@ -651,6 +736,153 @@ class LingBotOnKaggleTest(EnvCase):
         ad, ctx, rec = self.run_adapter([{"images": self.files.base + "/foto.zip"}])
         self.assertFalse(rec["ok"])
         self.assertTrue(ad.validate(ctx), "un errore va consegnato, non ritentato 5 volte")
+
+
+class UploadTest(EnvCase):
+    """File trascinati dal PC: salvati qui, caricati come dataset privato su Kaggle, trovati dallo script, poi cancellati."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        stub = ROOT / "tests" / "stub_lingbot"
+        make_repo(cls.tmp / "gh", "Robbyant", "lingbot-map",
+                  {p.relative_to(stub).as_posix(): p.read_text(encoding="utf-8") for p in stub.rglob("*.py")})
+
+    def setUp(self):
+        import io as _io
+        from core import uploads
+        self.uploads, self.io = uploads, _io
+        uploads.configure(self.tmp / "up")
+        self.out = Path(tempfile.mkdtemp(prefix="up_out_"))
+        os.environ["KAGGLE_API_TOKEN"] = "good-token"
+        os.environ["GPOOL_FETCH_BACKOFF"] = "0.1"
+
+    def tearDown(self):
+        shutil.rmtree(self.out, ignore_errors=True)
+        os.environ.pop("KAGGLE_API_TOKEN", None); os.environ.pop("GPOOL_FETCH_BACKOFF", None)
+
+    def save(self, name, data):
+        return self.uploads.save_stream(self.io.BytesIO(data), len(data), name, 10**9)
+
+    def make_zip(self, n=5):
+        import zipfile
+        b = self.io.BytesIO()
+        with zipfile.ZipFile(b, "w") as z:
+            for i in range(n):
+                z.writestr(f"stanza/{i:03d}.jpg", b"jpg%d" % i)
+        return b.getvalue()
+
+    # ---- salvataggio sicuro ----
+    def test_save_stream_and_safety(self):
+        r = self.save("../../etc/passwd", b"ciao")
+        self.assertEqual(r["name"], "passwd"); self.assertEqual(r["size"], 4)
+        p = self.uploads.path_for(r["id"])
+        self.assertEqual(p.read_bytes(), b"ciao")
+        self.assertTrue(str(p).startswith(str(self.tmp / "up")))
+        self.assertEqual(self.save("a b?*<>.zip", b"x")["name"], "a b____.zip")
+        for bad in ("", "../x", "zzzz", "0" * 16, None):
+            self.assertIsNone(self.uploads.path_for(bad))
+        with self.assertRaisesRegex(self.uploads.UploadError, "vuoto"):
+            self.uploads.save_stream(self.io.BytesIO(b""), 0, "a", 10)
+        with self.assertRaisesRegex(self.uploads.UploadError, "troppo grande"):
+            self.uploads.save_stream(self.io.BytesIO(b"x" * 20), 20, "a", 10)
+        before = list((self.tmp / "up").iterdir())
+        with self.assertRaisesRegex(self.uploads.UploadError, "interrotto"):
+            self.uploads.save_stream(self.io.BytesIO(b"abc"), 10, "a", 100)       # connessione caduta a metà
+        self.assertEqual(list((self.tmp / "up").iterdir()), before, "un caricamento interrotto non lascia file")
+
+    # ---- dal PC fino al programma ----
+    def run_repo(self, upload_id, extra_values=None):
+        plan = dict(PLAN, run="python app.py --text {testo} --input {file} --out {OUT}", setup=[],
+                    inputs=[{"key": "testo", "label": "Testo", "type": "text"}, {"key": "file", "label": "File", "type": "url"}])
+        params = {"repo_url": "https://github.com/o/demo", "plan": plan, "options": {"poll_s": 0.2},
+                  "values": {"testo": "x", "file": "upload:" + upload_id}}
+        ad = GitHubRepoAdapter()
+        step = ad.plan([], params, {})[0]
+        ctx = StepContext(None, "j", step, params, self.out, lambda p: None, "t", self.out / "c")
+        ad.run_step(ctx)
+        return json.loads((self.out / "results.jsonl").read_text().splitlines()[0])
+
+    def test_uploaded_text_file_reaches_the_program(self):
+        up = self.save("dati miei.txt", b"uno\ndue\ntre\nquattro\n")
+        n_put = len(self.kaggle.puts)
+        rec = self.run_repo(up["id"])
+        self.assertTrue(rec["ok"], rec)
+        self.assertIn("righe nel file di input: 4", (self.out / "outputs" / "result.txt").read_text())
+        self.assertEqual(self.kaggle.puts[n_put:][0][1], len(b"uno\ndue\ntre\nquattro\n"), "byte caricati = byte del file")
+        self.assertEqual(self.kaggle.datasets, {}, "il dataset temporaneo va cancellato da Kaggle")
+        self.assertEqual(self.kaggle.kernels, {})
+        for tokenfree in ((self.out / "run.log").read_text(),):
+            self.assertNotIn("good-token", tokenfree)
+
+    def test_plan_rejects_missing_upload(self):
+        plan = dict(PLAN, run="python app.py --text {testo} --input {file}", inputs=[
+            {"key": "testo", "label": "Testo", "type": "text"}, {"key": "file", "label": "File", "type": "url"}])
+        with self.assertRaisesRegex(ValueError, "non è più disponibile"):
+            GitHubRepoAdapter().plan([], {"repo_url": "https://github.com/o/demo", "plan": plan,
+                                          "values": {"testo": "x", "file": "upload:" + "0" * 16}}, {})
+
+    def test_lost_upload_at_run_time_is_reported(self):
+        up = self.save("a.txt", b"x\n")
+        plan = dict(PLAN, run="python app.py --text {testo} --input {file}", setup=[], inputs=[
+            {"key": "testo", "label": "Testo", "type": "text"}, {"key": "file", "label": "File", "type": "url"}])
+        params = {"repo_url": "https://github.com/o/demo", "plan": plan, "values": {"testo": "x", "file": "upload:" + up["id"]}}
+        ad = GitHubRepoAdapter()
+        step = ad.plan([], params, {})[0]
+        shutil.rmtree(self.tmp / "up" / up["id"])
+        ctx = StepContext(None, "j", step, params, self.out, lambda p: None, "t", self.out / "c")
+        ad.run_step(ctx)
+        rec = json.loads((self.out / "results.jsonl").read_text().splitlines()[0])
+        self.assertFalse(rec["ok"]); self.assertIn("non è più disponibile", rec["error"])
+
+    def run_lingbot(self):
+        from adapters.lingbot_map_adapter import LingBotMapAdapter
+        up = self.save("foto.zip", self.make_zip(5))
+        params = {"runtime": "kaggle", "options": {"setup": [], "model_path": str(self.tmp / "fake.pt"), "poll_s": 0.2}}
+        (self.tmp / "fake.pt").write_bytes(b"w")
+        ad = LingBotMapAdapter()
+        step = ad.plan([{"id": "s", "images": "upload:" + up["id"]}], params, {})[0]
+        self.assertEqual(step["payload"]["cfg"]["downloads"], {})
+        ctx = StepContext(None, "j", step, params, self.out, lambda p: None, "t", self.out / "c")
+        ad.run_step(ctx)
+        return json.loads((self.out / "results.jsonl").read_text().splitlines()[0])
+
+    def test_zip_of_photos_uploaded_and_extracted_by_kaggle(self):
+        rec = self.run_lingbot()
+        self.assertTrue(rec["ok"], rec)
+        poses = json.loads((self.out / "outputs" / "camera_poses.json").read_text())["frames"]
+        self.assertEqual(len(poses), 5)
+        self.assertEqual(self.kaggle.datasets, {})
+
+    def test_zip_not_extracted_by_kaggle(self):
+        k2 = FakeKaggle(unzip=False, queue_s=0.1).start()
+        os.environ["GPOOL_KAGGLE_API"] = k2.base
+        try:
+            rec = self.run_lingbot()
+            self.assertTrue(rec["ok"], rec)
+            self.assertEqual(len(json.loads((self.out / "outputs" / "camera_poses.json").read_text())["frames"]), 5)
+        finally:
+            os.environ["GPOOL_KAGGLE_API"] = self.kaggle.base
+            k2.stop()
+
+    def test_kaggle_rejecting_the_file_cleans_up(self):
+        k2 = FakeKaggle(dataset_delay=0.1).start()
+        os.environ["GPOOL_KAGGLE_API"] = k2.base
+        try:
+            c = KaggleClient(token="good-token", base=k2.base)
+            p = self.tmp / "x.txt"; p.write_text("hola")
+            tok = c.upload_blob(p)
+            with self.assertRaisesRegex(KaggleError, "400|rifiutato|elaborare"):
+                c.create_dataset("GPool prova", [tok + "-sbagliato"])
+            self.assertEqual(k2.datasets, {})
+            tok2 = c.upload_blob(p, progress=lambda n: None)
+            user, slug = c.create_dataset("GPool prova", [tok2])
+            self.assertIn((user, slug), k2.datasets)
+            c.delete_dataset(user, slug)
+            self.assertEqual(k2.datasets, {})
+        finally:
+            os.environ["GPOOL_KAGGLE_API"] = self.kaggle.base
+            k2.stop()
 
 
 @unittest.skipUnless(os.environ.get("KAGGLE_API_TOKEN_REAL"), "imposta KAGGLE_API_TOKEN_REAL per provare con Kaggle vero")
