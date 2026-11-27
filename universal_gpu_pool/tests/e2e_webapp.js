@@ -250,6 +250,12 @@ Worker('${baseUrl}', cfg['token'], open_store(cfg), name='gpu-e2e', poll=0.3, hb
     await page.waitForSelector('#phone-card:not(.hide)');
     await page.waitForFunction(() => document.querySelector('#phone-body').textContent.includes('avvia-telefono.bat'));
     assert(true, 'Telefono: senza --lan il pannello spiega di avviare avvia-telefono.bat');
+    await page.locator('#phone-card summary').click();
+    await page.click('#secret-gen');
+    const sec = await page.locator('#secret-out').inputValue();
+    assert(/^[A-HJ-NP-Za-km-z2-9]{40}$/.test(sec), 'Telefono: genera un codice segreto casuale di 40 caratteri senza simboli ambigui');
+    await page.click('#secret-gen');
+    assert((await page.locator('#secret-out').inputValue()) !== sec, 'Telefono: ogni codice generato è diverso');
     await page.click('#btn-phone-close');
 
     // 7. ricarica pagina: resta autenticato

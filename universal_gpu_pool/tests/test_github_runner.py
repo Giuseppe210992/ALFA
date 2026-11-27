@@ -655,7 +655,7 @@ class SystemTest(EnvCase):
 
     def test_7_webapp_has_github_and_gpu_ui(self):
         code, page = self.call("GET", "/", token=None)
-        for needle in ('data-mode="repo"', "form-repo", "/repos/analyze", "/gpu/kaggle", "kaggle.com/settings/api", "btn-phone", "avvia-telefono.bat"):
+        for needle in ('data-mode="repo"', "form-repo", "/repos/analyze", "/gpu/kaggle", "kaggle.com/settings/api", "btn-phone", "avvia-telefono.bat", "secret-gen", "GPOOL_TOKEN"):
             self.assertIn(needle, page)
 
 

@@ -1,0 +1,10 @@
+.git
+__pycache__
+*.pyc
+tests
+e2e_*
+gpu_pool_store
+models_cache
+config/secrets.env
+config/local_config.yaml
+config/providers.json

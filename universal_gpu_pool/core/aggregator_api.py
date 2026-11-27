@@ -806,7 +806,40 @@ class Router:
 MAX_BODY = 20 * 1024 * 1024     # 20 MB: abbastanza per migliaia di righe di testo
 
 
+class LoginThrottle:
+    """Blocca per un po' chi sbaglia troppe volte il token (utile quando il servizio è su internet)."""
+    def __init__(self, max_failures=8, window_s=600, lock_s=600):
+        self.max, self.window, self.lock = max_failures, window_s, lock_s
+        self.fails, self.locked = {}, {}
+        self._l = threading.Lock()
+
+    def blocked(self, who):
+        with self._l:
+            until = self.locked.get(who, 0)
+            if until > time.time():
+                return int(until - time.time()) + 1
+            self.locked.pop(who, None)
+            return 0
+
+    def fail(self, who):
+        with self._l:
+            now = time.time()
+            q = [t for t in self.fails.get(who, []) if now - t < self.window] + [now]
+            self.fails[who] = q
+            if len(q) >= self.max:
+                self.locked[who] = now + self.lock
+                self.fails.pop(who, None)
+            if len(self.fails) > 5000:          # non crescere senza limite sotto attacco
+                self.fails.clear()
+
+    def ok(self, who):
+        with self._l:
+            self.fails.pop(who, None)
+
+
 def make_server(router, host, port):
+    throttle = LoginThrottle(int(router.cfg.get("auth_max_failures", 8)), 600, int(router.cfg.get("auth_lock_s", 600)))
+
     def token_ok(got):
         return bool(got) and hmac.compare_digest(str(got).encode(), str(router.cfg["token"]).encode())
 
@@ -823,8 +856,16 @@ def make_server(router, host, port):
                 return self._send_raw(200, PAGE.read_bytes(), "text/html; charset=utf-8")
             if method == "GET" and u.path == "/favicon.ico":
                 return self._send_raw(204, b"", "image/x-icon")
+            who = self.client_address[0]
+            if router.cfg.get("trust_proxy"):
+                who = (self.headers.get("X-Forwarded-For") or who).split(",")[0].strip() or who
+            wait = throttle.blocked(who)
+            if wait:
+                return self._send(429, {"error": f"Troppi tentativi con un codice sbagliato: riprova tra {max(1, wait // 60)} minuti."})
             if not token_ok(self.headers.get("X-Pool-Token")):
+                throttle.fail(who)
                 return self._send(401, {"error": "token non valido"})
+            throttle.ok(who)
             if method == "POST" and u.path == "/uploads":              # file trascinato dall'utente (corpo binario)
                 from core import uploads
                 try:

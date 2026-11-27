@@ -74,13 +74,33 @@ def main():
         cfg["host"] = args.host
     if args.port:
         cfg["port"] = args.port
+    elif os.environ.get("GPOOL_PORT"):
+        cfg["port"] = int(os.environ["GPOOL_PORT"])
     if args.token:
         cfg["token"] = args.token
     if args.lan:
         cfg["host"] = "0.0.0.0"
+    # Server in cloud (es. Hugging Face Spaces): token e opzioni arrivano da «segreti» / variabili d'ambiente
+    public = bool(os.environ.get("GPOOL_PUBLIC") or os.environ.get("SPACE_ID"))
+    if os.environ.get("GPOOL_TOKEN") and not args.token:
+        cfg["token"] = os.environ["GPOOL_TOKEN"].strip()
+    if public:
+        cfg["token"] = os.environ.get("GPOOL_TOKEN", "").strip()      # in cloud il token viene SOLO dal segreto, mai da file
+        for leftover in ("secrets.env", "local_config.yaml", "providers.json"):
+            f = os.path.join(HERE, "config", leftover)
+            if os.path.exists(f):                 # arrivato dentro il pacchetto caricato: non va MAI usato né lasciato
+                os.remove(f)
+                print(f"  [!] Cancellato config/{leftover} trovato nel pacchetto caricato.")
+                print("      Se conteneva chiavi vere, REVOCALE e rigenerale (erano visibili a chi ha accesso ai file del Space).")
+        cfg["trust_proxy"] = True            # dietro il proxy del servizio: l'IP vero sta in X-Forwarded-For
+        cfg["verbose_worker"] = False
+        if len(str(cfg.get("token") or "")) < 24 or cfg.get("token") in WEAK_TOKENS:
+            print("\n  [!] Server pubblico: manca il segreto GPOOL_TOKEN (almeno 24 caratteri).")
+            print("      Impostalo in Settings → Variables and secrets del tuo Space e riavvia.\n")
+            sys.exit(2)
 
     # Token: generato una volta sola e salvato in config/local_config.yaml (escluso da git)
-    if cfg.get("token") in WEAK_TOKENS:
+    if cfg.get("token") in WEAK_TOKENS and not public:
         cfg["token"] = secrets.token_urlsafe(32)
         save_local(args.config, {"token": cfg["token"]})
         print("  Token generato e salvato in config/local_config.yaml")
@@ -144,7 +164,7 @@ def main():
         threading.Thread(target=_local_worker, daemon=True, name="local-api-worker").start()
 
     # Il link contiene il token nel frammento (#): resta nel browser, non viene inviato in rete.
-    login_url = f"{base_url}/#t={cfg['token']}"
+    login_url = f"{base_url}/#t={cfg['token']}" if not public else f"{base_url}/"
 
     def _open():
         time.sleep(0.8)
@@ -160,8 +180,11 @@ def main():
     print("  =========================================")
     print("        GPU Pool — Webapp avviata")
     print("  =========================================")
-    print(f"  Apri:        {login_url}")
-    print(f"  (indirizzo:  {base_url}/  — token in config/local_config.yaml)")
+    if public:
+        print(f"  Server pubblico in ascolto su {base_url}/ — accesso con il segreto GPOOL_TOKEN (non stampato).")
+    else:
+        print(f"  Apri:        {login_url}")
+        print(f"  (indirizzo:  {base_url}/  — token in config/local_config.yaml)")
     if args.lan:
         from core.netutil import lan_ip
         ip = lan_ip()

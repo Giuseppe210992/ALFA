@@ -1,3 +1,13 @@
+---
+title: GPU Pool
+emoji: 🖥️
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # GPU Pool (universal_gpu_pool)
 
 Webapp per usare modelli AI grandi **gratis**: le richieste vanno alle API gratuite (Groq, Cerebras,
@@ -45,7 +55,10 @@ Avvia **`avvia-telefono.bat`** (Windows) o `avvia-telefono.command` (macOS) inve
 (oppure, nella webapp, il pulsante **«📱 Telefono»**): contiene già il token, quindi entri senza digitare nulla; puoi inviartelo su WhatsApp/Telegram.
 Il telefono deve essere sulla **stessa Wi-Fi** del computer, che resta acceso con la finestra nera aperta; alla prima richiesta di Windows scegli «Consenti».
 Dal telefono si possono scegliere anche foto e video dalla galleria. Il collegamento non è cifrato (HTTP): usalo solo su una Wi-Fi fidata.
-**Fuori casa (rete dati) non funziona**: servirebbe un tunnel (Cloudflare/Tailscale) che non gira su Windows 7.
+**Fuori casa (rete dati) con il PC non funziona**: servirebbe un tunnel (Cloudflare/Tailscale) che non gira su Windows 7.
+Per usarlo ovunque e a PC spento, su un **server gratuito senza carta** (Hugging Face Spaces): guida in `deploy/huggingface/LEGGIMI.md`
+(`Dockerfile` e intestazione di questo file già pronti; protezioni per internet: segreto `GPOOL_TOKEN` obbligatorio, blocco dopo 8 codici sbagliati,
+cancellazione automatica di eventuali file con chiavi caricati per errore). **Non verificato su Hugging Face vero** e l'immagine Docker non è stata costruita qui.
 
 ### Problemi comuni
 - **«Nessuna chiave API configurata»** → apri «Account e chiavi» e collega almeno un servizio.

@@ -797,6 +797,33 @@ function initDrops() {
 }
 
 /* ---------------- telefono ---------------- */
+function randomSecret(n) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';     // senza caratteri ambigui (0/O, 1/l/I)
+  const limit = 256 - (256 % chars.length);
+  let out = '';
+  while (out.length < n) {
+    const a = new Uint8Array(n * 2);
+    crypto.getRandomValues(a);
+    for (const x of a) { if (x < limit && out.length < n) out += chars[x % chars.length]; }
+  }
+  return out;
+}
+function cloudBlock() {
+  return `<details class="tech" style="margin-top:14px"><summary>Voglio usarlo da qualsiasi posto, anche a PC spento (server gratuito, senza carta)</summary>
+    <p class="small" style="margin-top:8px">Si può mettere il programma su <b>Hugging Face Spaces</b> (gratis, solo email). Guida passo-passo nel file
+    <code>deploy/huggingface/LEGGIMI.md</code>. Per proteggerlo serve un <b>codice segreto lungo</b>: generalo qui e incollalo come segreto <code>GPOOL_TOKEN</code> del tuo Space.</p>
+    <div class="keyrow" style="display:flex;gap:8px"><input type="text" id="secret-out" readonly style="flex:1" placeholder="Premi «Genera»"><button class="btn sm" id="secret-gen">Genera codice segreto</button><button class="btn ghost sm" id="secret-copy">Copia</button></div>
+    <p class="hint">Il codice nasce nel tuo browser e non viene salvato né inviato a nessuno: copialo subito.</p></details>`;
+}
+function wireCloud() {
+  const g = $('#secret-gen'); if (!g) return;
+  g.onclick = () => { $('#secret-out').value = randomSecret(40); };
+  $('#secret-copy').onclick = async () => {
+    const v = $('#secret-out').value;
+    if (!v) { toast('Premi prima «Genera».'); return; }
+    try { await navigator.clipboard.writeText(v); toast('Codice copiato'); } catch { $('#secret-out').select(); toast('Selezionato: copialo a mano'); }
+  };
+}
 async function openPhone(open) {
   $('#phone-card').classList.toggle('hide', !open);
   if (!open) return;
@@ -809,7 +836,8 @@ async function openPhone(open) {
       <ol class="steps-list"><li>Chiudi la finestra nera del programma.</li>
       <li>Avvia <b>avvia-telefono.bat</b> (invece di avvia.bat).</li>
       <li>Torna qui e riapri questo pannello: troverai l'indirizzo da aprire sul telefono.</li></ol>
-      <p class="small">Il telefono deve essere collegato alla <b>stessa Wi-Fi</b> del computer, che deve restare acceso.</p>`;
+      <p class="small">Il telefono deve essere collegato alla <b>stessa Wi-Fi</b> del computer, che deve restare acceso.</p>` + cloudBlock();
+    wireCloud();
     return;
   }
   if (!n.url) { body.textContent = 'Non trovo l\'indirizzo del computer nella rete: sei collegato alla Wi-Fi?'; return; }
@@ -818,7 +846,8 @@ async function openPhone(open) {
     <li>Apri questo indirizzo nel browser del telefono (comodo: invialo a te stesso su WhatsApp/Telegram e toccalo):</li></ol>
     <div class="keyrow" style="display:flex;gap:8px;margin-top:6px"><input type="text" id="phone-link" readonly style="flex:1" value="${escapeHtml(link)}"><button class="btn sm" id="phone-copy">Copia</button></div>
     <p class="small" style="margin-top:10px">Se non si apre: quando Windows chiede di consentire l'accesso scegli <b>«Consenti»</b> (rete privata). Il computer deve restare acceso con la finestra nera aperta. Non funziona con la rete dati (4G/5G).<br>
-    <span style="color:var(--warn)">⚠ Il collegamento non è cifrato: usalo solo su una Wi-Fi di cui ti fidi.</span> Dal telefono puoi anche scegliere i file dalla galleria.</p>`;
+    <span style="color:var(--warn)">⚠ Il collegamento non è cifrato: usalo solo su una Wi-Fi di cui ti fidi.</span> Dal telefono puoi anche scegliere i file dalla galleria.</p>` + cloudBlock();
+  wireCloud();
   $('#phone-copy').onclick = async () => {
     try { await navigator.clipboard.writeText(link); toast('Indirizzo copiato'); }
     catch { $('#phone-link').select(); toast('Selezionato: copialo a mano'); }
