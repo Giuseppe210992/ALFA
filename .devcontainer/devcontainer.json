@@ -1,0 +1,13 @@
+{
+  "name": "GPU Pool",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "hostRequirements": { "cpus": 2 },
+  "forwardPorts": [8765],
+  "portsAttributes": {
+    "8765": { "label": "GPU Pool (apri questa)", "onAutoForward": "openBrowser" }
+  },
+  "postStartCommand": "bash universal_gpu_pool/avvia-codespaces.sh",
+  "customizations": {
+    "codespaces": { "openFiles": ["universal_gpu_pool/deploy/codespaces/INIZIA-QUI.md"] }
+  }
+}

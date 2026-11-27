@@ -1,0 +1,25 @@
+# Dockerfile per il Space «modello»: scarica il programma da GitHub quando si costruisce (nessun file da caricare).
+# Va incollato come file «Dockerfile» nel Space. Il repository GitHub deve essere PUBBLICO.
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Hugging Face esegue il contenitore come utente 1000
+RUN useradd -m -u 1000 user
+USER user
+ENV HOME=/home/user \
+    PATH=/home/user/.local/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    GPOOL_PUBLIC=1 \
+    GPOOL_PORT=7860
+WORKDIR $HOME/app
+
+ARG REPO=https://github.com/Giuseppe210992/ALFA.git
+ARG BRANCH=claude/new-session-q8o2nc
+RUN git clone --depth 1 --branch "$BRANCH" "$REPO" /tmp/src \
+    && cp -r /tmp/src/universal_gpu_pool/. "$HOME/app/" \
+    && rm -rf /tmp/src "$HOME/app/tests" "$HOME/app/.git"
+
+EXPOSE 7860
+CMD ["python", "run_webapp.py", "--host", "0.0.0.0", "--port", "7860", "--no-browser"]

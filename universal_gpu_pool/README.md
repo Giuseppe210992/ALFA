@@ -8,22 +8,23 @@ app_port: 7860
 pinned: false
 ---
 
-# 📱 Usalo dal telefono in 3 minuti — gratis, senza carta, senza installare nulla
+# ▶️ Avvia l'app con un tocco — gratis, senza carta, senza installare nulla
 
-[![Duplicate this Space](https://huggingface.co/datasets/huggingface/badges/resolve/main/duplicate-this-space-xl.svg)](https://huggingface.co/spaces/TUO_UTENTE_HF/gpu-pool?duplicate=true)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Giuseppe210992/ALFA/tree/claude/new-session-q8o2nc?quickstart=1)
 
-1. **Tocca il pulsante qui sopra** (anche dal telefono).
-2. **Entra** su Hugging Face, oppure crea un account gratuito: basta l'email, nessuna carta.
-3. Nella finestra «Duplicate this Space» tocca **Duplicate Space** (lascia tutto com'è).
-4. **Aspetta 2-3 minuti** che passi da «Building» a «Running» e tocca l'app: **si attiva da sola**.
-5. L'app ti guida: collega **Kaggle** (circa 30 ore di GPU gratis a settimana) e scegli cosa fare. Fine.
+Funziona da **telefono o computer**:
 
-Ti serve solo un account **Kaggle** gratuito (con il telefono verificato): l'app te lo spiega passo per passo.
-Il telefono ricorda i tuoi codici, quindi se il server gratuito si riavvia (succede) si rimette a posto da solo.
-**Non condividere il link personale** che l'app ti mostra in «📱 Telefono»: contiene il tuo codice di accesso.
+1. **Tocca il pulsante** e accedi con il tuo account GitHub (gratuito: basta l'email, nessuna carta).
+2. GitHub prepara per te un piccolo computer in cloud (1-2 minuti) e **avvia l'app da solo**.
+3. Quando compare «*porta 8765 disponibile*» tocca **Open in Browser** (oppure scheda **PORTE** → icona del globo 🌐):
+   si apre il sito, che **si attiva da solo**.
+4. Il sito ti guida: collega **Kaggle** (circa 30 ore di GPU gratis a settimana) e scegli cosa fare. Fine.
 
-*Preferisci usarlo sul computer?* Scarica lo ZIP da GitHub (Code → Download ZIP), estrailo e fai doppio clic su `universal_gpu_pool/avvia.bat`
-(Windows) o `avvia.command` (Mac).
+Costo: **zero**. GitHub regala a ogni account circa **60 ore al mese** di questo computer in cloud: quando non lo usi, spegnilo
+(github.com/codespaces → ⋯ → *Stop codespace*). Passi illustrati e consigli: [`deploy/codespaces/INIZIA-QUI.md`](deploy/codespaces/INIZIA-QUI.md).
+
+*Preferisci il computer di casa?* Scarica lo ZIP (Code → Download ZIP), estrailo e fai doppio clic su `avvia.bat` (Windows) o `avvia.command` (Mac).
+*Vuoi una copia su un server gratuito di Hugging Face?* → [`deploy/huggingface/LEGGIMI.md`](deploy/huggingface/LEGGIMI.md).
 
 ---
 

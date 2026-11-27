@@ -82,13 +82,14 @@ def main():
         cfg["host"] = "0.0.0.0"
     # Server in cloud (es. Hugging Face Spaces): token e opzioni arrivano da «segreti» / variabili d'ambiente
     public = bool(os.environ.get("GPOOL_PUBLIC") or os.environ.get("SPACE_ID"))
+    keep_local = bool(os.environ.get("GPOOL_KEEP_LOCAL"))      # Codespaces: il disco è permanente, i file di configurazione sono dell'utente
     if os.environ.get("GPOOL_TOKEN") and not args.token:
         cfg["token"] = os.environ["GPOOL_TOKEN"].strip()
     if public:
         cfg["token"] = os.environ.get("GPOOL_TOKEN", "").strip()      # in cloud il token viene SOLO dal segreto, mai da file
         for leftover in ("secrets.env", "local_config.yaml", "providers.json"):
             f = os.path.join(HERE, "config", leftover)
-            if os.path.exists(f):                 # arrivato dentro il pacchetto caricato: non va MAI usato né lasciato
+            if os.path.exists(f) and not keep_local:    # arrivato dentro il pacchetto caricato: non va MAI usato né lasciato
                 os.remove(f)
                 print(f"  [!] Cancellato config/{leftover} trovato nel pacchetto caricato.")
                 print("      Se conteneva chiavi vere, REVOCALE e rigenerale (erano visibili a chi ha accesso ai file del Space).")
@@ -186,6 +187,9 @@ def main():
     print("        GPU Pool — Webapp avviata")
     print("  =========================================")
     if public:
+        if os.environ.get("CODESPACE_NAME"):
+            dom = os.environ.get("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN", "app.github.dev")
+            print(f"  GitHub Codespaces: apri  https://{os.environ['CODESPACE_NAME']}-{port}.{dom}/")
         print(f"  Server pubblico in ascolto su {base_url}/ — " + (
             "ancora DA ATTIVARE: il primo dispositivo che apre la pagina lo attiva." if cfg.get("unclaimed")
             else "accesso con il segreto GPOOL_TOKEN (non stampato)."))
