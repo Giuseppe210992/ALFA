@@ -21,7 +21,7 @@ Il pulsante del README funziona solo se esiste un Space «modello» pubblico, cr
    contiene le tue chiavi). Il programma cancella comunque `secrets.env`/`local_config.yaml` all'avvio, ma resterebbero nella cronologia.
 3. *Settings → Variables and secrets → New secret*: `GPOOL_TOKEN` = un codice lungo qualsiasi (almeno 24 caratteri) **che non userai**: serve a
    impedire che qualcuno attivi il modello. Le copie non ereditano i segreti.
-4. Nel `README.md` di GitHub sostituisci `TUO_UTENTE_HF` con il tuo nome utente di Hugging Face.
+4. Il pulsante del README punta a `https://huggingface.co/spaces/Giuseppe210992/gpu-pool?duplicate=true`: lo Space modello deve chiamarsi esattamente `gpu-pool` sotto l'utente `Giuseppe210992` ed essere pubblico.
 
 ## Limiti onesti
 - Non provato su Hugging Face vero (da qui non è raggiungibile) e l'immagine Docker non è stata costruita nell'ambiente di sviluppo.
