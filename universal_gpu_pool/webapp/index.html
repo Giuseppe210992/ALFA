@@ -134,6 +134,26 @@ details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
 .drop .x{margin-left:8px;color:var(--bad);cursor:pointer}
 .drop .bar{margin:8px 0 0}
 
+/* fotocamera dal vivo */
+.live{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:2px 0 6px}
+.live .btn{padding:16px 10px;font-size:1rem;flex-direction:column;gap:4px}
+.cam{position:fixed;inset:0;background:#000;z-index:100;display:flex;flex-direction:column}
+.cam video{flex:1;min-height:0;width:100%;object-fit:contain;background:#000}
+.cam-top{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:linear-gradient(#000a,#0000);color:#fff;font-weight:600;z-index:2}
+.cam-hint{position:absolute;top:52px;left:12px;right:12px;font-size:.82rem;color:#fff;background:#0009;border-radius:10px;padding:8px 10px;z-index:2}
+.cam-strip{display:flex;gap:6px;padding:6px 10px;overflow-x:auto;min-height:62px;background:#000}
+.cam-strip img{height:50px;width:50px;object-fit:cover;border-radius:6px;border:1px solid #fff4}
+.cam-bar{display:flex;align-items:center;justify-content:space-around;gap:10px;padding:12px 12px calc(14px + env(safe-area-inset-bottom));background:#000}
+.cam-bar .btn{min-width:96px}
+.shutter{width:76px;height:76px;border-radius:50%;border:5px solid #fff;background:#ffffff33;position:relative;flex-shrink:0}
+.shutter::after{content:"";position:absolute;inset:6px;border-radius:50%;background:#fff;transition:.1s}
+.shutter:active::after{inset:10px}
+.shutter.rec::after{border-radius:8px;background:#ff3b3b;inset:20px}
+.cam-status{position:absolute;left:0;right:0;bottom:130px;text-align:center;color:#fff;font-weight:700;text-shadow:0 1px 4px #000;z-index:2;pointer-events:none}
+.cam .check{color:#fff;margin:0}
+.flash{animation:fl .15s}
+@keyframes fl{from{opacity:.2}to{opacity:1}}
+
 /* login */
 .login-box{max-width:400px;margin:12vh auto 0}
 .login-box .card{padding:22px}
@@ -363,7 +383,14 @@ details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
               <option value="video" selected>Un video (mp4, mov…)</option>
               <option value="images">Uno ZIP di foto (jpg/png)</option>
             </select>
-            <label>File dal tuo computer</label>
+            <div class="live" id="d3-live">
+              <button type="button" class="btn" id="d3-cam-photo"><span style="font-size:1.6rem">📷</span>Scatta foto ora</button>
+              <button type="button" class="btn" id="d3-cam-video"><span style="font-size:1.6rem">🎥</span>Filma ora</button>
+            </div>
+            <input type="file" accept="video/*" capture="environment" class="hide" id="d3-native-video">
+            <input type="file" accept="image/*" capture="environment" class="hide" id="d3-native-photo" multiple>
+            <div class="hint" id="d3-live-note"></div>
+            <label style="margin-top:10px">…oppure scegli foto, un video o uno ZIP già presenti</label>
             <div class="drop" id="d3-drop"></div>
             <label for="d3-url" style="margin-top:12px">…oppure incolla un link</label>
             <input id="d3-url" type="text" placeholder="Link (Google Drive, Dropbox, …)">
@@ -373,7 +400,7 @@ details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
               <option value="10" selected>10 — consigliato</option>
               <option value="15">15 — più dettagliato</option>
             </select>
-            <p class="hint">Puoi <b>trascinare qui il file</b> (video, oppure uno ZIP di foto) o incollare un link: va bene quello che copi da <b>Google Drive</b> («Condividi → Chiunque abbia il link») o da <b>Dropbox</b>: lo converto io. Per le foto serve <b>uno ZIP</b>, non una cartella. Risultato: <b>scene.glb</b> (nuvola di punti 3D) e le pose della camera, scaricabili da «Risultati». Richiede l'account Kaggle collegato.</p>
+            <p class="hint">Per un buon risultato: muoviti <b>lentamente</b> intorno alla scena, <b>20-60 foto</b> (o un video di 20-60 secondi) con molta sovrapposizione, luce uniforme, niente specchi o vetri. Puoi anche <b>scegliere più foto insieme</b> dalla galleria (le impacchetto io) o trascinare un file, oppure incollare un link: va bene quello che copi da <b>Google Drive</b> («Condividi → Chiunque abbia il link») o da <b>Dropbox</b>: lo converto io. Per le foto serve <b>uno ZIP</b>, non una cartella. Risultato: <b>scene.glb</b> (nuvola di punti 3D) e le pose della camera, scaricabili da «Risultati». Richiede l'account Kaggle collegato.</p>
           </div>
           <!-- local -->
           <div id="form-local" class="hide">
@@ -466,6 +493,20 @@ details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
       </div>
       <div id="results" class="empty">I risultati compaiono qui appena il lavoro è completato.</div>
     </div>
+  </div>
+</div>
+
+<div id="cam-modal" class="cam hide" role="dialog" aria-modal="true" aria-label="Fotocamera">
+  <video id="cam-view" autoplay playsinline muted></video>
+  <video id="cam-play" class="hide" controls playsinline></video>
+  <div class="cam-top"><span id="cam-title"></span><button type="button" class="btn ghost sm" id="cam-close" style="color:#fff">✕ Chiudi</button></div>
+  <div class="cam-hint" id="cam-hint"></div>
+  <div class="cam-status" id="cam-status"></div>
+  <div class="cam-strip" id="cam-strip"></div>
+  <div class="cam-bar">
+    <button type="button" class="btn ghost sm" id="cam-flip" title="Cambia fotocamera">🔄</button>
+    <button type="button" class="shutter" id="cam-shutter" aria-label="Scatta / registra"></button>
+    <button type="button" class="btn" id="cam-done">✓ Fatto</button>
   </div>
 </div>
 
@@ -755,11 +796,35 @@ function fmtSize(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : M
 
 /* Zona «trascina qui»: ritorna {get(), clear()}. onChange(info|null) a ogni caricamento/rimozione. */
 function attachDrop(zone, onChange) {
-  zone.innerHTML = '<div class="msg">📎 Trascina qui un file dal tuo computer <span class="muted">oppure clicca per sceglierlo</span></div>' +
-    '<div class="bar hide"><i style="width:0%"></i></div><div class="done hide"></div><input type="file" class="hide">';
+  zone.innerHTML = '<div class="msg">📎 Trascina qui un file dal tuo computer <span class="muted">oppure tocca per sceglierlo</span></div>' +
+    '<div class="bar hide"><i style="width:0%"></i></div><div class="done hide"></div><input type="file" class="hide" multiple>';
   const msg = zone.querySelector('.msg'), bar = zone.querySelector('.bar'), done = zone.querySelector('.done'), inp = zone.querySelector('input');
   let info = null, busy = false;
-  const api = { get: () => info, clear };
+  const api = { get: () => info, clear, set: show, takeMany, take };
+  function show(r) {
+    info = r; bar.classList.add('hide'); msg.classList.add('hide');
+    done.innerHTML = '✓ ' + escapeHtml(r.name) + ' (' + fmtSize(r.size) + ') <span class="x" title="Rimuovi">✕ rimuovi</span>';
+    done.classList.remove('hide');
+    done.querySelector('.x').onclick = ev => { ev.stopPropagation(); clear(); };
+    if (onChange) onChange(info);
+  }
+  // più foto scelte insieme → un solo ZIP creato qui nel browser
+  async function takeMany(fileList) {
+    const files = [...fileList];
+    if (!files.length) return;
+    if (files.length === 1) return take(files[0]);
+    const isImg = f => /^image\//.test(f.type) || /\.(jpe?g|png|webp|bmp|tiff?|heic|heif)$/i.test(f.name);
+    if (!files.every(isImg)) { toast('Scegli più foto insieme, oppure un solo video o ZIP.'); return; }
+    if (busy) return;
+    busy = true; msg.classList.add('hide'); done.classList.add('hide'); bar.classList.remove('hide');
+    bar.querySelector('i').style.width = '0%';
+    try {
+      const zip = await makeZip(files.map((f, i) => ({ name: String(i + 1).padStart(4, '0') + '_' + f.name.replace(/[^\w.\-]+/g, '_'), blob: f })));
+      busy = false;
+      await take(new File([zip], 'foto-' + stamp() + '.zip', { type: 'application/zip' }));
+    } catch (e) { bar.classList.add('hide'); msg.classList.remove('hide'); toast('Non riesco a preparare le foto: ' + e.message, 5000); }
+    finally { busy = false; }
+  }
   function clear() {
     info = null; done.classList.add('hide'); msg.classList.remove('hide'); bar.classList.add('hide'); inp.value = '';
     if (onChange) onChange(null);
@@ -771,22 +836,213 @@ function attachDrop(zone, onChange) {
     const fill = bar.querySelector('i'); fill.style.width = '0%';
     try {
       const r = await uploadFile(file, f => { fill.style.width = Math.round(f * 100) + '%'; });
-      info = r; bar.classList.add('hide');
-      done.innerHTML = '✓ ' + escapeHtml(r.name) + ' (' + fmtSize(r.size) + ') <span class="x" title="Rimuovi">✕ rimuovi</span>';
-      done.classList.remove('hide');
-      done.querySelector('.x').onclick = ev => { ev.stopPropagation(); clear(); };
-      if (onChange) onChange(info);
+      show(r);
     } catch (e) {
       bar.classList.add('hide'); msg.classList.remove('hide'); toast('Caricamento non riuscito: ' + e.message, 5000);
     } finally { busy = false; }
   }
   zone.addEventListener('click', ev => { if (!ev.target.closest('.x') && !busy) inp.click(); });
   inp.addEventListener('click', ev => ev.stopPropagation());
-  inp.onchange = () => take(inp.files[0]);
+  inp.onchange = () => takeMany(inp.files);
   ['dragenter', 'dragover'].forEach(t => zone.addEventListener(t, ev => { ev.preventDefault(); zone.classList.add('over'); }));
   ['dragleave', 'drop'].forEach(t => zone.addEventListener(t, ev => { ev.preventDefault(); zone.classList.remove('over'); }));
-  zone.addEventListener('drop', ev => take(ev.dataTransfer.files[0]));
+  zone.addEventListener('drop', ev => takeMany(ev.dataTransfer.files));
   return api;
+}
+
+/* ---------------- ZIP creato nel browser (senza compressione: le foto JPEG sono già compresse) ---------------- */
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function stamp() { const d = new Date(), p = n => String(n).padStart(2, '0'); return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()); }
+async function makeZip(files) {           // files: [{name, blob}] → Blob .zip
+  const enc = new TextEncoder(), parts = [], central = [];
+  const d = new Date();
+  const dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const dosDate = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  let offset = 0;
+  for (const f of files) {
+    const data = new Uint8Array(await f.blob.arrayBuffer());
+    const name = enc.encode(f.name), crc = crc32(data), size = data.length;
+    if (size > 0xFFFFFFFF || offset > 0xFFFFFFFF) throw new Error('troppo grande per uno ZIP');
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+    h.setUint16(10, dosTime, true); h.setUint16(12, dosDate, true); h.setUint32(14, crc, true);
+    h.setUint32(18, size, true); h.setUint32(22, size, true); h.setUint16(26, name.length, true); h.setUint16(28, 0, true);
+    parts.push(h.buffer, name, data);
+    central.push({ name, crc, size, offset });
+    offset += 30 + name.length + size;
+  }
+  let cdSize = 0;
+  for (const c of central) {
+    const h = new DataView(new ArrayBuffer(46));
+    h.setUint32(0, 0x02014b50, true); h.setUint16(4, 20, true); h.setUint16(6, 20, true); h.setUint16(8, 0x0800, true); h.setUint16(10, 0, true);
+    h.setUint16(12, dosTime, true); h.setUint16(14, dosDate, true); h.setUint32(16, c.crc, true);
+    h.setUint32(20, c.size, true); h.setUint32(24, c.size, true); h.setUint16(28, c.name.length, true);
+    h.setUint32(42, c.offset, true);
+    parts.push(h.buffer, c.name); cdSize += 46 + c.name.length;
+  }
+  const e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, central.length, true); e.setUint16(10, central.length, true);
+  e.setUint32(12, cdSize, true); e.setUint32(16, offset, true);
+  parts.push(e.buffer);
+  return new Blob(parts, { type: 'application/zip' });
+}
+
+/* ---------------- fotocamera dal vivo (foto a raffica, video) ---------------- */
+const cam = { mode: null, stream: null, rec: null, chunks: [], photos: [], auto: null, facing: 'environment', blob: null, mime: '', t0: 0, tick: null, busy: false };
+function camAvailable() { return !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia); }
+function camStatus(t) { $('#cam-status').textContent = t || ''; }
+async function camStart() {
+  camStop(true);
+  const base = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+  try {
+    cam.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: cam.facing }, ...base }, audio: false });
+  } catch (e) {
+    camClose();
+    const why = e && e.name === 'NotAllowedError' ? 'Hai negato il permesso alla fotocamera: abilitalo dalle impostazioni del browser (icona del lucchetto) e riprova.'
+      : e && e.name === 'NotFoundError' ? 'Non trovo nessuna fotocamera su questo dispositivo.' : 'La fotocamera non parte: ' + (e && e.message || e);
+    toast(why, 6000);
+    return false;
+  }
+  const v = $('#cam-view'); v.srcObject = cam.stream; v.classList.remove('hide');
+  try { await v.play(); } catch (e) {}
+  return true;
+}
+function camStop(keepModal) {
+  clearInterval(cam.auto); cam.auto = null; clearInterval(cam.tick); cam.tick = null;
+  if (cam.rec && cam.rec.state !== 'inactive') { try { cam.rec.onstop = null; cam.rec.stop(); } catch (e) {} }
+  cam.rec = null;
+  if (cam.stream) { cam.stream.getTracks().forEach(t => t.stop()); cam.stream = null; }
+  $('#cam-view').srcObject = null;
+}
+function camClose() {
+  camStop();
+  if (cam.blob && cam.blobUrl) { URL.revokeObjectURL(cam.blobUrl); }
+  cam.mode = null; cam.photos = []; cam.blob = null; cam.blobUrl = null; cam.busy = false;
+  $('#cam-strip').innerHTML = ''; camStatus('');
+  $('#cam-modal').classList.add('hide'); document.body.style.overflow = '';
+}
+async function openCam(mode) {
+  if (!camAvailable()) { nativeCapture(mode); return; }
+  cam.mode = mode; cam.photos = []; cam.blob = null; cam.chunks = [];
+  $('#cam-modal').classList.remove('hide'); document.body.style.overflow = 'hidden';
+  $('#cam-play').classList.add('hide'); $('#cam-view').classList.remove('hide');
+  $('#cam-strip').innerHTML = ''; camStatus('');
+  $('#cam-title').textContent = mode === 'photo' ? '📷 Scatta foto' : '🎥 Filma';
+  $('#cam-shutter').classList.remove('rec');
+  $('#cam-hint').innerHTML = mode === 'photo'
+    ? 'Muoviti <b>lentamente</b> intorno alla scena e scatta <b>20-60 foto</b> con molta sovrapposizione. <label class="check"><input type="checkbox" id="cam-auto"> Scatto automatico (1 al secondo)</label>'
+    : 'Premi il pulsante rosso per <b>registrare</b>, cammina <b>lentamente</b> intorno alla scena (20-60 secondi) e premi di nuovo per fermare.';
+  const auto = $('#cam-auto');
+  if (auto) auto.onchange = () => {
+    clearInterval(cam.auto); cam.auto = null;
+    if (auto.checked) cam.auto = setInterval(shoot, 1000);
+  };
+  updateDone();
+  await camStart();
+}
+function updateDone() {
+  const d = $('#cam-done');
+  if (cam.mode === 'photo') { d.textContent = '✓ Fatto (' + cam.photos.length + ')'; d.disabled = cam.photos.length < 3; }
+  else { d.textContent = '✓ Usa il video'; d.disabled = !cam.blob; }
+}
+function shoot() {
+  const v = $('#cam-view');
+  if (!cam.stream || !v.videoWidth) return;
+  if (cam.photos.length >= 300) { camStatus('Limite di 300 foto raggiunto'); clearInterval(cam.auto); return; }
+  const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
+  c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+  c.toBlob(b => {
+    if (!b) return;
+    cam.photos.push(b);
+    const img = document.createElement('img'); img.src = URL.createObjectURL(b); img.onload = () => URL.revokeObjectURL(img.src);
+    const strip = $('#cam-strip'); strip.appendChild(img); while (strip.children.length > 12) strip.removeChild(strip.firstChild);
+    strip.scrollLeft = strip.scrollWidth;
+    camStatus(cam.photos.length + (cam.photos.length === 1 ? ' foto' : ' foto'));
+    v.classList.remove('flash'); void v.offsetWidth; v.classList.add('flash');
+    if (navigator.vibrate) navigator.vibrate(20);
+    updateDone();
+  }, 'image/jpeg', 0.92);
+}
+function pickMime() {
+  const c = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  return (window.MediaRecorder && c.find(m => MediaRecorder.isTypeSupported(m))) || '';
+}
+function toggleRecord() {
+  if (!cam.stream) return;
+  if (cam.rec && cam.rec.state === 'recording') { cam.rec.stop(); return; }
+  if (cam.blob) {                               // «rifai»: si butta la registrazione e si riparte
+    if (cam.blobUrl) URL.revokeObjectURL(cam.blobUrl);
+    cam.blob = null; cam.blobUrl = null; $('#cam-play').classList.add('hide'); $('#cam-view').classList.remove('hide'); updateDone(); camStatus('');
+    return;
+  }
+  if (!window.MediaRecorder) { toast('Questo browser non sa registrare video qui: uso la fotocamera del telefono.'); camClose(); nativeCapture('video'); return; }
+  cam.chunks = []; cam.mime = pickMime();
+  try { cam.rec = new MediaRecorder(cam.stream, cam.mime ? { mimeType: cam.mime, videoBitsPerSecond: 8000000 } : undefined); }
+  catch (e) { try { cam.rec = new MediaRecorder(cam.stream); } catch (e2) { toast('Registrazione non disponibile: ' + e2.message, 5000); return; } }
+  cam.rec.ondataavailable = ev => { if (ev.data && ev.data.size) cam.chunks.push(ev.data); };
+  cam.rec.onstop = () => {
+    clearInterval(cam.tick); cam.tick = null;
+    const type = (cam.rec && cam.rec.mimeType) || cam.mime || 'video/webm';
+    cam.blob = new Blob(cam.chunks, { type });
+    cam.blobUrl = URL.createObjectURL(cam.blob);
+    $('#cam-shutter').classList.remove('rec');
+    const pl = $('#cam-play'); pl.src = cam.blobUrl; pl.classList.remove('hide'); $('#cam-view').classList.add('hide');
+    camStatus('Registrato: guarda l\'anteprima, poi «Usa il video» (oppure premi il pulsante per rifare)');
+    updateDone();
+  };
+  cam.rec.start(1000);
+  cam.t0 = Date.now();
+  $('#cam-shutter').classList.add('rec');
+  cam.tick = setInterval(() => {
+    const s = Math.floor((Date.now() - cam.t0) / 1000);
+    camStatus('● REC ' + String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'));
+    if (s >= 300 && cam.rec && cam.rec.state === 'recording') cam.rec.stop();         // massimo 5 minuti
+  }, 250);
+}
+async function camDone() {
+  if (cam.busy) return;
+  if (cam.mode === 'photo') {
+    if (cam.photos.length < 3) { toast('Servono almeno 3 foto (meglio 20 o più).'); return; }
+    cam.busy = true; $('#cam-done').disabled = true; camStatus('Preparo le foto…');
+    const photos = cam.photos.slice();
+    camStop(true);
+    try {
+      const zip = await makeZip(photos.map((b, i) => ({ name: 'foto_' + String(i + 1).padStart(4, '0') + '.jpg', blob: b })));
+      await useCaptured(new File([zip], 'foto-live-' + stamp() + '.zip', { type: 'application/zip' }), 'images');
+    } catch (e) { toast('Errore: ' + e.message, 5000); camClose(); }
+  } else {
+    if (!cam.blob) return;
+    cam.busy = true; $('#cam-done').disabled = true;
+    const ext = /mp4/.test(cam.blob.type) ? 'mp4' : 'webm';
+    await useCaptured(new File([cam.blob], 'video-live-' + stamp() + '.' + ext, { type: cam.blob.type }), 'video');
+  }
+}
+async function useCaptured(file, kind) {
+  camStatus('Carico… 0%');
+  try {
+    const r = await uploadFile(file, f => camStatus('Carico… ' + Math.round(f * 100) + '%'));
+    if (d3Drop) d3Drop.set(r);
+    $('#d3-kind').value = kind;
+    camClose();
+    toast('✓ ' + r.name + ' pronto. Premi «Continua».', 4000);
+  } catch (e) { cam.busy = false; updateDone(); camStatus(''); toast('Caricamento non riuscito: ' + e.message, 6000); }
+}
+// Senza https la fotocamera del browser è bloccata: si usa quella del telefono (app Fotocamera) tramite il campo file
+function nativeCapture(mode) {
+  const el = $(mode === 'photo' ? '#d3-native-photo' : '#d3-native-video');
+  el.value = ''; el.click();
+}
+function initCam() {
+  $('#d3-cam-photo').onclick = () => openCam('photo');
+  $('#d3-cam-video').onclick = () => openCam('video');
+  ['#d3-native-photo', '#d3-native-video'].forEach(sel => { $(sel).onchange = () => { if (d3Drop) d3Drop.takeMany($(sel).files); }; });
+  $('#cam-close').onclick = camClose;
+  $('#cam-flip').onclick = async () => { cam.facing = cam.facing === 'environment' ? 'user' : 'environment'; if (cam.stream && !(cam.rec && cam.rec.state === 'recording')) await camStart(); };
+  $('#cam-shutter').onclick = () => { if (cam.mode === 'photo') shoot(); else if (cam.mode === 'video') toggleRecord(); };
+  $('#cam-done').onclick = camDone;
+  $('#d3-live-note').textContent = camAvailable() ? '' : 'Questo indirizzo non è «sicuro» (https): il browser blocca la fotocamera dentro la pagina, quindi si apre l\'app Fotocamera del telefono.';
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !$('#cam-modal').classList.contains('hide')) camClose(); });
 }
 // evita che il browser apra il file se lo si lascia fuori dalle zone
 ['dragover', 'drop'].forEach(t => window.addEventListener(t, ev => ev.preventDefault()));
@@ -1547,6 +1803,7 @@ $('#btn-refresh').onclick = () => { tick(); tickSettings(); };
 $('#tok').addEventListener('keydown', e => { if (e.key === 'Enter') $('#btn-login').click(); });
 
 initDrops();
+initCam();
 bootstrap();
 setInterval(tick, 2500);
 setInterval(tickSettings, 10000);

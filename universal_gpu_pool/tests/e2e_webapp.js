@@ -61,8 +61,8 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
   const baseUrl = loginUrl.replace(/\/#t=.*/, '');
   console.log('webapp:', loginUrl.replace(/#t=.*/, '#t=***'));
 
-  const browser = await chromium.launch();
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
+  const browser = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true, permissions: ['camera'] });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
@@ -154,6 +154,69 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
     await page.click('#btn-back3');
     await page.click('#d3-drop .x');
     assert(await page.locator('#d3-drop .done').isHidden(), '3D: il file si può rimuovere');
+
+    // 3D dal vivo: fotocamera dentro la pagina (la finta di Chromium), foto a raffica → ZIP creato nel browser
+    const pyZip = code => require('child_process').execFileSync('python3', ['-c', code], { cwd: proj }).toString().trim();
+    const lastUpload = pat => `import glob,os;fs=sorted(glob.glob('gpu_pool_store/uploads/*/${pat}'),key=os.path.getmtime);print(fs[-1] if fs else '')`;
+    await page.click('#d3-cam-photo');
+    await page.waitForSelector('#cam-modal:not(.hide)');
+    await page.waitForFunction(() => document.querySelector('#cam-view').videoWidth > 0, null, { timeout: 15000 });
+    assert(await page.locator('#cam-done').isDisabled(), 'Fotocamera: con meno di 3 foto «Fatto» è disattivato');
+    for (let i = 0; i < 5; i++) { await page.click('#cam-shutter'); await page.waitForTimeout(250); }
+    assert((await page.locator('#cam-status').textContent()).includes('5 foto'), 'Fotocamera: il contatore mostra 5 foto');
+    await page.check('#cam-auto');
+    await page.waitForFunction(() => /^(\d+) foto/.test(document.querySelector('#cam-status').textContent) && parseInt(document.querySelector('#cam-status').textContent) >= 7, null, { timeout: 8000 });
+    await page.uncheck('#cam-auto');
+    await page.screenshot({ path: path.join(shots, '12_fotocamera.png') });
+    await page.click('#cam-done');
+    await page.waitForSelector('#d3-drop .done:not(.hide)', { timeout: 20000 });
+    const zname = await page.locator('#d3-drop .done').textContent();
+    assert(/foto-live-\d{8}-\d{6}\.zip/.test(zname), 'Fotocamera: le foto diventano da sole uno ZIP caricato: ' + zname.trim().slice(0, 40));
+    assert(await page.locator('#d3-kind').inputValue() === 'images' && await page.locator('#cam-modal').isHidden(), 'Fotocamera: la finestra si chiude e il tipo diventa «ZIP di foto»');
+    const zp = pyZip(lastUpload('foto-live-*.zip'));
+    const zinfo = pyZip(`import zipfile;z=zipfile.ZipFile('${zp}');assert z.testzip() is None;n=z.namelist();print(len(n), all(z.read(x)[:2]==b'\\xff\\xd8' for x in n), n[0])`);
+    assert(/^(\d+) True foto_0001\.jpg$/.test(zinfo) && parseInt(zinfo) >= 7, 'Fotocamera: lo ZIP creato nel browser è valido e contiene solo JPEG (' + zinfo + ')');
+    await page.click('#d3-drop .x');
+
+    // video registrato sul momento
+    await page.click('#d3-cam-video');
+    await page.waitForFunction(() => document.querySelector('#cam-view').videoWidth > 0, null, { timeout: 15000 });
+    await page.click('#cam-shutter');
+    await page.waitForFunction(() => document.querySelector('#cam-status').textContent.includes('REC'), null, { timeout: 5000 });
+    await page.waitForTimeout(2200);
+    await page.click('#cam-shutter');
+    await page.waitForSelector('#cam-play:not(.hide)', { timeout: 10000 });
+    assert(await page.locator('#cam-done').isEnabled(), 'Video: dopo l\'arresto compare l\'anteprima e «Usa il video» si attiva');
+    await page.click('#cam-done');
+    await page.waitForSelector('#d3-drop .done:not(.hide)', { timeout: 20000 });
+    assert(/video-live-\d{8}-\d{6}\.(webm|mp4)/.test(await page.locator('#d3-drop .done').textContent()), 'Video: registrato dentro la pagina e caricato');
+    const vp = pyZip(lastUpload('video-live-*'));
+    const vhead = pyZip(`d=open('${vp}','rb').read(64);print(len(open('${vp}','rb').read()), 'webm' if d[:4]==b'\\x1aE\\xdf\\xa3' else ('mp4' if d[4:8]==b'ftyp' else 'ignoto'))`);
+    assert(/^\d+ (webm|mp4)$/.test(vhead) && parseInt(vhead) > 2000, 'Video: il file sul server è un vero video (' + vhead + ')');
+    assert(await page.locator('#d3-kind').inputValue() === 'video', 'Video: il tipo diventa «Un video»');
+    await page.click('#d3-drop .x');
+
+    // più foto scelte insieme dalla galleria → un solo ZIP
+    const pics = [1, 2, 3].map(i => { const f = path.join(proj, `e2e_gal_${i}.jpg`); fs.writeFileSync(f, Buffer.from([0xff, 0xd8, 0xff, 0xe0, i, 0, 0, 0, 0xff, 0xd9])); return f; });
+    await page.locator('#d3-drop input[type=file]').setInputFiles(pics);
+    await page.waitForSelector('#d3-drop .done:not(.hide)', { timeout: 15000 });
+    const gz = pyZip(lastUpload('foto-*.zip'));
+    const ginfo = pyZip(`import zipfile;z=zipfile.ZipFile('${gz}');assert z.testzip() is None;print(len(z.namelist()), z.namelist()[0])`);
+    assert(/^3 0001_e2e_gal_1\.jpg$/.test(ginfo), 'Galleria: 3 foto scelte insieme diventano uno ZIP ordinato (' + ginfo + ')');
+    await page.click('#d3-drop .x');
+    pics.forEach(f => fs.unlinkSync(f));
+
+    // senza fotocamera nel browser (indirizzo non sicuro): spiegazione + si usa l'app Fotocamera del telefono
+    const ctxN = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await ctxN.addInitScript(() => { Object.defineProperty(navigator, 'mediaDevices', { value: undefined }); });
+    const pn = await ctxN.newPage();
+    await pn.goto(loginUrl);
+    await pn.waitForSelector('#view-app:not(.hide)', { timeout: 15000 });
+    await pn.click('[data-mode="3d"]'); await pn.click('#btn-next1');
+    assert((await pn.locator('#d3-live-note').textContent()).includes('sicuro'), 'Fotocamera: senza accesso alla fotocamera il browser spiega perché e passa all\'app Fotocamera');
+    const [chooser] = await Promise.all([pn.waitForEvent('filechooser'), pn.click('#d3-cam-video')]);
+    assert(chooser.isMultiple() === false, 'Fotocamera: il pulsante «Filma ora» apre la scelta/ripresa di un solo video');
+    await ctxN.close();
     await page.click('#btn-back2');
     // lavoro 3D "vero" via modalità esperta, con il finto repository di test
     const photos = path.join(proj, 'e2e_photos');
@@ -323,5 +386,6 @@ Worker('${baseUrl}', cfg['token'], open_store(cfg), name='gpu-e2e', poll=0.3, hb
   } finally {
     await browser.close();
     app.p.kill(); fake2.p.kill(); fkag.p.kill(); fgh.p.kill(); if (pub) pub.p.kill();
+    try { fs.readdirSync(proj).filter(f => /^e2e_gal_/.test(f)).forEach(f => fs.unlinkSync(path.join(proj, f))); } catch (e) {}
   }
 })();

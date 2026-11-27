@@ -729,7 +729,9 @@ class LingBotOnKaggleTest(EnvCase):
         st = ad.plan([{"video": "https://drive.google.com/file/d/ABCDEFGHIJK12/view"}], {"runtime": "kaggle"}, {})
         cfg = st[0]["payload"]["cfg"]
         self.assertIn("drive.usercontent.google.com/download?id=ABCDEFGHIJK12", cfg["downloads"]["video"])
-        self.assertIn("--video_path {video}", cfg["run"]); self.assertIn("--use_sdpa", cfg["run"])
+        self.assertIn("_gpool_prep_images.py {video} /tmp/gpool_frames --fps 10", cfg["run"])
+        self.assertNotIn("--video_path", cfg["run"], "anche i video passano dalla preparazione dei fotogrammi")
+        self.assertIn("--image_folder /tmp/gpool_frames", cfg["run"]); self.assertIn("--use_sdpa", cfg["run"])
         self.assertIn("pip install -q -e .", cfg["setup"][0]); self.assertIn("hf_hub_download", cfg["setup"][1])
         self.assertIn("_gpool_lingbot_runner.py", cfg["files"])
         for bad, msg in (([{"video": "/percorso/locale.mp4"}], "link"), ([{}], "esattamente"), ([], "indica"),
@@ -760,6 +762,29 @@ class LingBotOnKaggleTest(EnvCase):
         log = (self.out / "run.log").read_text()
         self.assertIn("Foto pronte: 4", log)
         self.assertIn("poche foto (4): num_scale_frames = 3", log)
+
+    def test_live_video_runs_end_to_end_on_kaggle(self):
+        """Video registrato sul momento (fps dichiarati sbagliati come nei WebM del browser): il modello deve vedere tutti i fotogrammi."""
+        try:
+            import cv2, numpy as np
+        except ImportError:
+            self.skipTest("serve OpenCV")
+        p = Path(self.srv) / "live.avi"
+        w = cv2.VideoWriter(str(p), cv2.VideoWriter_fourcc(*"MJPG"), 1000, (64, 48))
+        if not w.isOpened():
+            self.skipTest("OpenCV non scrive AVI qui")
+        for i in range(45):
+            w.write(np.full((48, 64, 3), i * 5 % 255, np.uint8))
+        w.release()
+        old_path = os.environ["PATH"]
+        os.environ["PATH"] = os.path.dirname(sys.executable) + os.pathsep + old_path      # «python» = lo stesso interprete (ha OpenCV)
+        try:
+            ad, ctx, rec = self.run_adapter([{"id": "v", "video": self.files.base + "/live.avi"}])
+        finally:
+            os.environ["PATH"] = old_path
+        self.assertTrue(rec["ok"], rec)
+        self.assertEqual(len(json.loads((self.out / "outputs" / "camera_poses.json").read_text())["frames"]), 45)
+        self.assertIn("Fotogrammi pronti: 45", (self.out / "run.log").read_text())
 
     def test_zip_without_photos_explains_what_it_contains(self):
         import zipfile

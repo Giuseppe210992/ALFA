@@ -27,10 +27,7 @@ def lingbot_cfg(scene, opts):
         setup = ["pip install -q -e . trimesh matplotlib"] + weights
     parts = ["python", RUNNER_NAME, "--repo", ".", "--out", "{OUT}", "--glb-percent", str(float(opts.get("glb_percent", 50))),
              "--", "--model_path", model, "--mode", opts.get("mode", "streaming")]
-    if key == "video":
-        parts += ["--video_path", "{video}", "--fps", str(int(opts.get("fps", 10)))]
-    else:
-        parts += ["--image_folder", FRAMES_DIR]
+    parts += ["--image_folder", FRAMES_DIR]
     for k, flag in (("stride", "--stride"), ("first_k", "--first_k"), ("keyframe_interval", "--keyframe_interval"),
                     ("num_scale_frames", "--num_scale_frames"), ("camera_num_iterations", "--camera_num_iterations"),
                     ("window_size", "--window_size"), ("overlap_keyframes", "--overlap_keyframes")):
@@ -38,7 +35,9 @@ def lingbot_cfg(scene, opts):
             parts += [flag, str(int(opts[k]))]
     parts += ["--use_sdpa", "--offload_to_cpu"]       # FlashInfer non è installato su Kaggle: attenzione SDPA
     run = " ".join(parts)
-    if key == "images":      # prima si preparano le foto (il demo ufficiale ne accetta pochi formati e non guarda nelle sottocartelle)
-        run = f"python {PREP_NAME} {{images}} {FRAMES_DIR} && {run}"
+    # Prima si preparano foto o video: il demo ufficiale accetta pochi formati, non guarda nelle sottocartelle e si fida
+    # dei metadati dei video (che nei video registrati dal browser sono spesso sbagliati). Si passa sempre da una cartella di fotogrammi.
+    extra = f" --fps {int(opts.get('fps', 10))}" if key == "video" else ""
+    run = f"python {PREP_NAME} {{{key}}} {FRAMES_DIR}{extra} && {run}"
     return {"setup": setup, "run": run, "input_key": key, "files": {RUNNER_NAME: runner, PREP_NAME: prep},
             "title": "LingBot-Map (3D)", "gpu": True, "timeout_s": int(opts.get("timeout_s", 7200))}

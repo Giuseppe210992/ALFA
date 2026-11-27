@@ -102,5 +102,87 @@ class PrepTest(unittest.TestCase):
         self.assertEqual(len(demo_finds(str(self.dst))), 5)
 
 
+try:
+    import cv2
+    import numpy as np
+    HAVE_CV2 = True
+except ImportError:
+    HAVE_CV2 = False
+sys.path.insert(0, str(ROOT))
+from adapters.lingbot_prep_images import pick_stride  # noqa: E402
+
+
+class StrideTest(unittest.TestCase):
+    def test_declared_fps_is_used_when_plausible(self):
+        self.assertEqual(pick_stride(300, 30, 10, 300), 3)
+        self.assertEqual(pick_stride(120, 24, 10, 300), 2)
+        self.assertEqual(pick_stride(50, 10, 10, 300), 1)
+
+    def test_broken_fps_from_browser_recordings_is_ignored(self):
+        for bad in (1000, 0, None, float("nan"), -5, 90000, "x"):
+            self.assertEqual(pick_stride(200, bad, 10, 300), 1, f"fps dichiarati {bad!r}: nessun salto")
+        self.assertEqual(pick_stride(900, 1000, 10, 300), 3, "con fps assurdi comanda il tetto di fotogrammi")
+
+    def test_cap_on_total_frames(self):
+        self.assertEqual(pick_stride(3000, 30, 10, 300), 10)
+        self.assertEqual(pick_stride(301, 10, 10, 300), 2)
+        self.assertEqual(pick_stride(-1, 30, 10, 300), 3)
+
+
+@unittest.skipUnless(HAVE_CV2, "serve OpenCV")
+class VideoTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="vid_"))
+        self.dst = self.tmp / "dst"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def make_video(self, name, n=40, fps=30, size=(64, 48)):
+        path = self.tmp / name
+        fourcc = cv2.VideoWriter_fourcc(*("MJPG" if name.endswith(".avi") else "mp4v"))
+        w = cv2.VideoWriter(str(path), fourcc, fps, size)
+        self.assertTrue(w.isOpened(), "OpenCV non riesce a scrivere video di prova")
+        for i in range(n):
+            f = np.full((size[1], size[0], 3), (i * 6) % 255, np.uint8)
+            cv2.putText(f, str(i), (2, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+            w.write(f)
+        w.release()
+        return path
+
+    def test_video_to_frames(self):
+        v = self.make_video("a.mp4", n=60, fps=30)
+        r = prep(v, self.dst, "--fps", "10")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        n = len(demo_finds(str(self.dst)))
+        self.assertIn(n, range(18, 23), f"30 fps → 10 fps su 60 fotogrammi ≈ 20 immagini, trovate {n}")
+        self.assertIn("Fotogrammi pronti", r.stdout)
+
+    def test_wrong_declared_fps_does_not_starve_the_model(self):
+        """Il caso dei video registrati nel browser: fps dichiarati assurdi (qui 1000). Con la vecchia logica: 1 fotogramma su 100."""
+        v = self.make_video("b.avi", n=90, fps=1000)
+        r = prep(v, self.dst, "--fps", "10", "--max-frames", "300")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(demo_finds(str(self.dst))), 90, "tutti i fotogrammi: l'fps dichiarato non è credibile")
+
+    def test_cap_and_resize(self):
+        v = self.make_video("c.mp4", n=120, fps=1000, size=(640, 480))
+        r = prep(v, self.dst, "--max-frames", "30", "--max-side", "320")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        files = demo_finds(str(self.dst))
+        self.assertLessEqual(len(files), 30); self.assertGreaterEqual(len(files), 25)
+        img = cv2.imread(files[0]); self.assertEqual(max(img.shape[:2]), 320)
+
+    def test_clear_errors(self):
+        r = prep(self.make_video("d.mp4", n=2), self.dst)
+        self.assertNotEqual(r.returncode, 0); self.assertIn("fotogrammi leggibili", r.stderr)
+        junk = self.tmp / "rotto.mp4"; junk.write_bytes(b"non e un video" * 50)
+        r = prep(junk, self.dst)
+        self.assertNotEqual(r.returncode, 0); self.assertTrue("Non riesco ad aprire" in r.stderr or "fotogrammi leggibili" in r.stderr, r.stderr)
+        txt = self.tmp / "a.txt"; txt.write_text("x")
+        r = prep(txt, self.dst)
+        self.assertNotEqual(r.returncode, 0); self.assertIn("file di tipo", r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
