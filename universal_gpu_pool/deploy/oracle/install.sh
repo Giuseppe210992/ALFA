@@ -14,6 +14,17 @@ ENVF=/etc/gpool.env
 
 say() { printf '\n==> %s\n' "$*"; }
 
+say "0/6 Controllo porte e memoria"
+if command -v ss >/dev/null; then
+  BUSY=$(ss -ltnp 2>/dev/null | awk '$4 ~ /:(80|443)$/ && $0 !~ /caddy/ {print $4" "$NF}')
+  if [ -n "$BUSY" ]; then
+    echo "Le porte 80/443 sono già usate da altri programmi sull'istanza:"; echo "$BUSY"
+    echo "Libera le porte, oppure usa il tuo proxy esistente verso 127.0.0.1:8765 e lancia con GPOOL_NO_CADDY=1."
+    [ -n "${GPOOL_NO_CADDY:-}" ] || exit 1
+  fi
+fi
+free -m 2>/dev/null | awk '/^Mem:/ {print "  memoria libera: " $7 " MB"}'
+
 say "1/6 Pacchetti di base"
 if command -v apt-get >/dev/null; then
   export DEBIAN_FRONTEND=noninteractive
@@ -100,7 +111,8 @@ elif command -v iptables >/dev/null; then
 fi
 
 systemctl daemon-reload
-systemctl enable --now gpool.service gpool-caddy.service >/dev/null 2>&1
+systemctl enable --now gpool.service >/dev/null 2>&1
+[ -n "${GPOOL_NO_CADDY:-}" ] || systemctl enable --now gpool-caddy.service >/dev/null 2>&1
 systemctl restart gpool.service
 sleep 3
 systemctl is-active --quiet gpool.service && echo "  programma: attivo" || { echo "  programma NON attivo:"; journalctl -u gpool -n 15 --no-pager; exit 1; }
