@@ -14,8 +14,7 @@ pinned: false
 
 > 📲 **Icona sulla schermata Home:** dal telefono, a app aperta, usa il banner **«Installa»** (Android) oppure
 > Safari → Condividi → *Aggiungi alla schermata Home* (iPhone). Da quel momento si apre con un tocco, a schermo intero.
-> L'icona funziona bene con un **indirizzo stabile** (copia su Hugging Face, vedi `deploy/huggingface/LEGGIMI.md`):
-> l'indirizzo di Codespaces cambia a ogni riavvio.
+> Installa l'app dall'indirizzo del tuo Codespace (`https://NOME-8765.app.github.dev`): il nome del Codespace resta lo stesso finché non lo elimini.
 
 Funziona da **telefono o computer**:
 

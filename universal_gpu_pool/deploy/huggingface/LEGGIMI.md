@@ -1,3 +1,6 @@
+> ⚠️ **Aggiornamento (nov 2026):** su Hugging Face gli Space Docker e Gradio su CPU gratuita richiedono ora un abbonamento PRO
+> (restano gratis solo quelli Static, che non possono eseguire Python). Questa strada NON è più gratuita: usa Codespaces (vedi README).
+
 # Copia personale gratuita su Hugging Face Spaces (senza carta)
 
 Così il programma gira su un server di Hugging Face: dal telefono funziona ovunque e il PC può restare spento.
