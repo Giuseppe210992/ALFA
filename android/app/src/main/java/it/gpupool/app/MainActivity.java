@@ -10,6 +10,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.provider.MediaStore;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
@@ -81,9 +82,22 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIF);
         }
+        askBatteryExemption();
         web.loadData(page("Avvio di GPU Pool… (la prima volta ci vuole qualche secondo)"), "text/html; charset=utf-8", null);
         startForegroundService(new Intent(this, PoolService.class));
         waitForServer();
+    }
+
+    /** Chiede una sola volta di non limitare l'app in background: senza, Android può fermarla a schermo spento. */
+    private void askBatteryExemption() {
+        try {
+            android.content.SharedPreferences p = getSharedPreferences("pool", MODE_PRIVATE);
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            if (p.getBoolean("battery_asked", false) || pm.isIgnoringBatteryOptimizations(getPackageName())) return;
+            p.edit().putBoolean("battery_asked", true).apply();
+            startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:" + getPackageName())));
+        } catch (Exception ignored) { }
     }
 
     private static String page(String msg) {

@@ -12,6 +12,7 @@ import android.content.pm.ServiceInfo;
 import android.content.res.AssetManager;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.PowerManager;
 
 import com.chaquo.python.Python;
 import com.chaquo.python.android.AndroidPlatform;
@@ -27,6 +28,7 @@ public class PoolService extends Service {
     static final int PORT = 8765;
     static volatile boolean started = false;
     static volatile String error = null;
+    private PowerManager.WakeLock wakeLock;
 
     static String token(Context c) {
         SharedPreferences p = c.getSharedPreferences("pool", MODE_PRIVATE);
@@ -59,6 +61,10 @@ public class PoolService extends Service {
         } else {
             startForeground(1, n);
         }
+        if (wakeLock == null) {          // con lo schermo spento la CPU non deve addormentarsi: il server deve restare raggiungibile
+            wakeLock = ((PowerManager) getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "gpool:service");
+        }
+        if (!wakeLock.isHeld()) wakeLock.acquire(6 * 60 * 60 * 1000L);
         if (!started) {
             started = true;
             error = null;
@@ -102,6 +108,12 @@ public class PoolService extends Service {
             dst.mkdirs();
             for (String f : list) copyAssets(am, path + "/" + f, new File(dst, f));
         }
+    }
+
+    @Override
+    public void onDestroy() {
+        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        super.onDestroy();
     }
 
     @Override
