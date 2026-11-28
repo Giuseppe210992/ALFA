@@ -361,7 +361,12 @@ class Router:
         with self.lock:
             now = time.time()
             for wid, w in self.workers.items():
-                if w["status"] == "online" and now - w["last_seen"] > self.cfg["lease_timeout"]:
+                lease = self.cfg["lease_timeout"]
+                if w["profile"].get("api_only"):
+                    # Il worker locale gira nello stesso programma del server: un silenzio breve vuol dire quasi sempre che il
+                    # telefono/PC è in pausa, non che il lavoro sia perso (rimetterlo in coda lancerebbe un doppione su Kaggle).
+                    lease = max(lease, int(self.cfg.get("api_lease_timeout", 900)))
+                if w["status"] == "online" and now - w["last_seen"] > lease:
                     w["status"] = "offline"
                     self.log(f"{w['name']} OFFLINE (lease scaduto)")
                     for job in self.jobs.values():

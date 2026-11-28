@@ -7,6 +7,7 @@ port: 8765
 store_root: ./gpu_pool_store   # su Colab: cartella di Google Drive montato
 local_api_worker: true         # avvia un worker locale per remote_api (path free senza Kaggle)
 heartbeat_interval: 10      # secondi
+api_lease_timeout: 900     # il worker locale (solo API) è nello stesso programma del server: si tollerano pause lunghe (telefono in standby)
 lease_timeout: 45           # secondi di silenzio prima di dichiarare il nodo offline
 handoff_threshold: 0.7      # pre-allerta al 70%
 session_limit_s: 32400      # durata prudenziale sessione gratuita (9 h)

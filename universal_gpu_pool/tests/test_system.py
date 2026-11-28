@@ -246,6 +246,20 @@ class SystemTest(unittest.TestCase):
         row = [j for j in allst["jobs"] if j["id"] == r["job_id"]][0]
         self.assertIn("KeyError", row["error"]); self.assertGreaterEqual(row["attempts"], 1)
 
+    def test_084_local_api_worker_gets_long_lease(self):
+        """Il worker locale (stesso programma del server) non va dichiarato «caduto» per una pausa breve del telefono."""
+        local = [wid for wid, w in self.router.workers.items() if w["profile"].get("api_only") and w["status"] == "online"]
+        self.assertTrue(local, "serve il worker locale online")
+        gpu = self.router.register({"name": "gpu-lease-test", "gpu": "x", "vram_gb": 14.0})
+        with self.router.lock:
+            self.router.workers[local[0]]["last_seen"] -= 120
+            self.router.workers[gpu]["last_seen"] -= 120
+        self.router.reap()
+        self.assertEqual(self.router.workers[local[0]]["status"], "online")          # 2 minuti di pausa: ancora in vita
+        self.assertEqual(self.router.workers[gpu]["status"], "offline")              # un nodo GPU esterno: si
+        with self.router.lock:
+            self.router.workers[local[0]]["last_seen"] = time.time()
+
     def test_085_gpu_jobs_wait_for_gpu_node(self):
         code, r = self.call("POST", "/jobs/plan", {"adapter": "demo", "items": [],
                                                    "params": {"n_steps": 2, "step_seconds": 0.2}})
