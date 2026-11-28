@@ -20,7 +20,7 @@ from pathlib import Path
 
 from adapters.base_adapter import BaseAdapter
 from core import github_repo, repo_planner
-from core.kaggle_client import KaggleClient, KaggleError, slugify
+from core.kaggle_client import KaggleClient, KaggleError, slugify, _dataset_wait
 from core.repo_planner import normalize_plan, validate_values
 
 
@@ -90,6 +90,7 @@ class GitHubRepoAdapter(BaseAdapter):
         t0 = time.time()
         outcome = {"ok": False, "error": "", "files": [], "seconds": 0}
         client = user = slug = None
+        keep_notebook = False
         try:
             client = KaggleClient.from_env()
             ctx.progress(0.02)
@@ -99,14 +100,7 @@ class GitHubRepoAdapter(BaseAdapter):
                 datasets = [f"{ds_user}/{ds_slug}"]
             script_cfg = dict(cfg, uploads={k: v["name"] for k, v in (cfg.get("uploads") or {}).items()})
             title = "GPool " + uuid.uuid4().hex[:8]
-            user, slug = client.push_script(title, build_script(script_cfg), gpu=cfg.get("gpu", True), internet=True,
-                                            timeout_s=min(int(cfg["timeout_s"]) + cfg["setup_timeout_s"] + 600, 32400),
-                                            datasets=datasets)
-            print(f"[github_repo] notebook Kaggle: {user}/{slug}", flush=True)
-            ctx.progress(0.08)
             budget = int(cfg["timeout_s"]) + cfg["setup_timeout_s"] + 900
-            ctx.progress(0.1)
-
             best = [0.1]
 
             def tick(st, elapsed):
@@ -118,9 +112,26 @@ class GitHubRepoAdapter(BaseAdapter):
                 if p > best[0]:             # l'avanzamento non torna mai indietro
                     best[0] = p
                     ctx.progress(p)
-            st, msg = client.wait(user, slug, budget, on_tick=tick, poll=float(opts.get("poll_s", 10)))
-            ctx.progress(0.92)
-            files, klog = client.list_output(user, slug)
+
+            for attempt in range(3):
+                t_push = time.time()
+                user, slug = client.push_script(title, build_script(script_cfg), gpu=cfg.get("gpu", True), internet=True,
+                                                timeout_s=min(int(cfg["timeout_s"]) + cfg["setup_timeout_s"] + 600, 32400),
+                                                datasets=datasets)
+                print(f"[github_repo] notebook Kaggle: {user}/{slug}", flush=True)
+                ctx.progress(0.08)
+                ctx.progress(0.1)
+                st, msg = client.wait(user, slug, budget, on_tick=tick, poll=float(opts.get("poll_s", 10)))
+                ctx.progress(0.92)
+                files, klog = client.list_output(user, slug)
+                # Errore immediato e senza alcun registro: il notebook non è nemmeno partito (spesso il dataset appena
+                # creato non è ancora montabile). Si riprova invece di arrendersi.
+                if (st == "ERROR" and not files and not (klog or "").strip() and attempt < 2
+                        and time.time() - t_push < 300):
+                    print("[github_repo] Kaggle ha fallito subito senza registro: riprovo", flush=True)
+                    time.sleep(_dataset_wait() * 3)
+                    continue
+                break
             for f in files:
                 name = f["name"].replace("\\", "/").lstrip("/")
                 if ".." in name.split("/") or not name:
@@ -136,6 +147,12 @@ class GitHubRepoAdapter(BaseAdapter):
                 outcome.update(ok=bool(res.get("ok")), error=res.get("error", ""))
             else:
                 outcome.update(ok=False, error=(msg or f"Kaggle ha terminato con stato {st} senza risultati"))
+                if st == "ERROR" and not (klog or "").strip():
+                    outcome["error"] += (" — il notebook non è nemmeno partito e Kaggle non ha lasciato nessun registro. Apri "
+                                         "kaggle.com/code → il notebook «" + title + "» (l'ho lasciato nel tuo account) per vedere il "
+                                         "motivo: di solito GPU o Internet non sono disponibili (verifica del telefono, quota GPU "
+                                         "settimanale finita) oppure il file caricato non è stato accettato.")
+                    keep_notebook = True
                 if klog and not (out / "run.log").exists():
                     (out / "run.log").write_text(klog[-20000:], encoding="utf-8")
             if st not in ("COMPLETE",) and outcome["ok"]:
@@ -143,7 +160,7 @@ class GitHubRepoAdapter(BaseAdapter):
         except (KaggleError, OSError) as e:
             outcome.update(ok=False, error=str(e))
         finally:
-            if client and user and slug and opts.get("delete_after", True):
+            if client and user and slug and opts.get("delete_after", True) and not keep_notebook:
                 client.delete(user, slug)
             if client and getattr(self, "_dataset", None):
                 client.delete_dataset(*self._dataset)         # il dataset temporaneo con i tuoi file non resta su Kaggle

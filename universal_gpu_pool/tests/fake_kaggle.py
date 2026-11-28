@@ -20,7 +20,8 @@ USERS = {"good-token": "tester"}
 
 
 class FakeKaggle:
-    def __init__(self, no_phone=False, queue_s=0.3, page_size=4, timeout_kill=None, port=0, unzip=True, dataset_delay=0.3, deny_datasets=False, deny_status=False, strict_ready=False):
+    def __init__(self, no_phone=False, queue_s=0.3, page_size=4, timeout_kill=None, port=0, unzip=True, dataset_delay=0.3, deny_datasets=False, deny_status=False, strict_ready=False, silent_fail_first=0):
+        self.silent_fail_first, self.saves = silent_fail_first, 0
         self.deny_datasets = deny_datasets
         self.deny_status, self.strict_ready = deny_status, strict_ready
         self.no_phone, self.queue_s, self.page_size = no_phone, queue_s, page_size
@@ -154,6 +155,12 @@ class FakeKaggle:
                     (d / "script.py").write_text(body["text"], encoding="utf-8")
                     k = {"dir": d, "t0": time.time(), "body": body, "proc": None, "rc": None}
                     fake.kernels[(user, slug)] = k
+                    fake.saves += 1
+                    if fake.silent_fail_first > 0:         # il notebook non parte: ERROR subito, nessun registro, nessun file
+                        fake.silent_fail_first -= 1
+                        k["rc"] = 1
+                        (d / "kernel.log").write_text("")
+                        return self._send(200, {"ref": f"/code/{user}/{slug}", "url": f"https://x/{user}/{slug}", "versionNumber": 1})
                     env = dict(os.environ, GPOOL_WORKDIR=str(d / "working"), GPOOL_TMPDIR=str(d / "tmp"))
                     k["datasets"] = body.get("datasetDataSources") or []
                     if k["datasets"]:                       # monta i dataset come /kaggle/input/<slug>/...

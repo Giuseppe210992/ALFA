@@ -929,6 +929,37 @@ class UploadTest(EnvCase):
             os.environ["GPOOL_KAGGLE_API"] = self.kaggle.base
             k2.stop()
 
+    def test_silent_kaggle_failure_is_retried(self):
+        """ERROR immediato senza registro (notebook mai partito): si riprova, poi riesce."""
+        k2 = FakeKaggle(silent_fail_first=1).start()
+        os.environ["GPOOL_KAGGLE_API"] = k2.base
+        os.environ["GPOOL_DATASET_WAIT"] = "0.1"
+        try:
+            up = self.save("dati.txt", b"uno\ndue\n")
+            rec = UploadTest.__dict__["run_repo"](self, up["id"])
+            self.assertTrue(rec["ok"], rec)
+            self.assertEqual(k2.saves, 2)
+        finally:
+            os.environ["GPOOL_KAGGLE_API"] = self.kaggle.base
+            os.environ.pop("GPOOL_DATASET_WAIT", None)
+            k2.stop()
+
+    def test_silent_kaggle_failure_gives_actionable_message(self):
+        k2 = FakeKaggle(silent_fail_first=9).start()
+        os.environ["GPOOL_KAGGLE_API"] = k2.base
+        os.environ["GPOOL_DATASET_WAIT"] = "0.05"
+        try:
+            up = self.save("dati.txt", b"uno\ndue\n")
+            rec = UploadTest.__dict__["run_repo"](self, up["id"])
+            self.assertFalse(rec["ok"])
+            self.assertEqual(k2.saves, 3)
+            self.assertIn("non è nemmeno partito", rec["error"]); self.assertIn("kaggle.com/code", rec["error"])
+            self.assertTrue(k2.kernels, "il notebook va lasciato nell'account per leggerne il registro")
+        finally:
+            os.environ["GPOOL_KAGGLE_API"] = self.kaggle.base
+            os.environ.pop("GPOOL_DATASET_WAIT", None)
+            k2.stop()
+
     def test_dataset_status_denied_still_works(self):
         """Caso reale (telefono): il token crea il dataset ma non può leggerne lo stato (403 su GetDatasetStatus).
         Non deve essere un errore: si attende e si riprova ad agganciare il dataset al notebook."""
