@@ -48,6 +48,34 @@ def slugify(title):
     return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", title.lower())).strip("-")
 
 
+_BOOT = os.urandom(6).hex()          # identifica questa esecuzione del programma: i notebook di esecuzioni precedenti sono «orfani»
+
+
+def _registry():
+    return os.environ.get("GPOOL_KAGGLE_REG") or os.path.join("gpu_pool_store", "kaggle_notebooks.json")
+
+
+def _reg_load():
+    try:
+        import json
+        with open(_registry(), encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, list) else []
+    except Exception:
+        return []
+
+
+def _reg_save(items):
+    try:
+        import json
+        path = _registry()
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(items, f)
+    except OSError:
+        pass
+
+
 def _dataset_wait():
     """Secondi di attesa tra un tentativo e l'altro quando lo stato del dataset non è leggibile (i test lo accorciano)."""
     try:
@@ -256,6 +284,23 @@ class KaggleClient:
             self.call(KERNELS, "DeleteKernel", {"userName": user, "kernelSlug": slug}, retries=0)
         except KaggleError:
             pass        # pulizia facoltativa
+        _reg_save([e for e in _reg_load() if not (e.get("user") == user and e.get("slug") == slug)])
+
+    def remember(self, user, slug):
+        """Annota il notebook lanciato: se il programma viene fermato (telefono in pausa, app chiusa) resterebbe acceso su Kaggle."""
+        items = [e for e in _reg_load() if not (e.get("user") == user and e.get("slug") == slug)]
+        items.append({"user": user, "slug": slug, "boot": _BOOT, "t": int(time.time())})
+        _reg_save(items[-50:])
+
+    def cleanup_orphans(self):
+        """Cancella i notebook lanciati da esecuzioni precedenti (i loro lavori non sono più seguiti da nessuno)
+        per liberare le sessioni GPU (Kaggle ne concede 2 alla volta). -> quanti ne ha rimossi."""
+        n = 0
+        for e in _reg_load():
+            if e.get("boot") != _BOOT and e.get("user") and e.get("slug"):
+                self.delete(e["user"], e["slug"])
+                n += 1
+        return n
 
     def wait(self, user, slug, timeout_s, on_status=None, poll=10.0, on_tick=None):
         """Attende la fine dell'esecuzione. Ritorna (stato_finale, messaggio).

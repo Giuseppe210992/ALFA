@@ -20,7 +20,8 @@ USERS = {"good-token": "tester"}
 
 
 class FakeKaggle:
-    def __init__(self, no_phone=False, queue_s=0.3, page_size=4, timeout_kill=None, port=0, unzip=True, dataset_delay=0.3, deny_datasets=False, deny_status=False, strict_ready=False, silent_fail_first=0):
+    def __init__(self, no_phone=False, queue_s=0.3, page_size=4, timeout_kill=None, port=0, unzip=True, dataset_delay=0.3, deny_datasets=False, deny_status=False, strict_ready=False, silent_fail_first=0, max_sessions=None):
+        self.max_sessions = max_sessions
         self.silent_fail_first, self.saves = silent_fail_first, 0
         self.deny_datasets = deny_datasets
         self.deny_status, self.strict_ready = deny_status, strict_ready
@@ -142,6 +143,10 @@ class FakeKaggle:
                     user, _, slug = body["slug"].partition("/")
                     assert user == USERS[token], f"slug utente sbagliato: {body['slug']}"
                     assert slug == "-".join(body["newTitle"].lower().split()), "lo slug deve derivare dal titolo"
+                    if fake.max_sessions is not None:
+                        running = [kk for kk in fake.kernels.values() if kk["rc"] is None]
+                        if len(running) >= fake.max_sessions and (user, slug) not in fake.kernels:
+                            return self._send(200, {"error": f"Maximum batch GPU session count of {fake.max_sessions} reached."})
                     if fake.strict_ready:                  # come Kaggle vero: dataset non ancora pronto -> sorgente non valida
                         for ref in body.get("datasetDataSources") or []:
                             ds0 = fake.datasets.get(tuple(ref.split("/", 1)))

@@ -14,6 +14,7 @@ params:
 Output: tutti i file prodotti (outputs/…), run.log, result.json, results.jsonl.
 """
 import json
+import os
 import time
 import uuid
 from pathlib import Path
@@ -82,6 +83,32 @@ class GitHubRepoAdapter(BaseAdapter):
         return user, slug
 
     # ---------- esecuzione ----------
+    @staticmethod
+    def _push(client, title, text, cfg, datasets, ctx):
+        """Lancia il notebook. Kaggle concede 2 sessioni GPU alla volta: prima si liberano quelle orfane (lavori interrotti),
+        poi, se sono ancora tutte occupate, si attende che se ne liberi una."""
+        removed = client.cleanup_orphans()
+        if removed:
+            print(f"[github_repo] fermati {removed} notebook rimasti accesi da lavori interrotti", flush=True)
+        waited = 0
+        while True:
+            try:
+                res = client.push_script(title, text, gpu=cfg.get("gpu", True), internet=True,
+                                         timeout_s=min(int(cfg["timeout_s"]) + cfg["setup_timeout_s"] + 600, 32400),
+                                         datasets=datasets)
+                client.remember(*res)
+                return res
+            except KaggleError as e:
+                if "Maximum batch" not in str(e) and "session count" not in str(e):
+                    raise
+                if waited >= float(os.environ.get("GPOOL_SLOT_WAIT_MAX", "900")):
+                    raise KaggleError("Hai già 2 sessioni GPU in corso su Kaggle (è il massimo consentito). Apri kaggle.com/code, "
+                                      "poi «Your Work» → «Sessions» e ferma quelle che non ti servono; poi riprova.") from None
+                step = float(os.environ.get("GPOOL_SLOT_WAIT_STEP", "30"))
+                print(f"[github_repo] 2 sessioni GPU già in uso su Kaggle: attendo che se ne liberi una ({int(waited)} s)", flush=True)
+                time.sleep(step)
+                waited += step
+
     def run_step(self, ctx):
         from core.kaggle_script import build_script
         cfg = dict(ctx.step["payload"]["cfg"])
@@ -115,9 +142,7 @@ class GitHubRepoAdapter(BaseAdapter):
 
             for attempt in range(3):
                 t_push = time.time()
-                user, slug = client.push_script(title, build_script(script_cfg), gpu=cfg.get("gpu", True), internet=True,
-                                                timeout_s=min(int(cfg["timeout_s"]) + cfg["setup_timeout_s"] + 600, 32400),
-                                                datasets=datasets)
+                user, slug = self._push(client, title, build_script(script_cfg), cfg, datasets, ctx)
                 print(f"[github_repo] notebook Kaggle: {user}/{slug}", flush=True)
                 ctx.progress(0.08)
                 ctx.progress(0.1)

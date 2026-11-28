@@ -929,6 +929,57 @@ class UploadTest(EnvCase):
             os.environ["GPOOL_KAGGLE_API"] = self.kaggle.base
             k2.stop()
 
+    def _slots_env(self, k2, **extra):
+        os.environ["GPOOL_KAGGLE_API"] = k2.base
+        os.environ["GPOOL_KAGGLE_REG"] = str(self.out / "reg.json")
+        for k, v in extra.items():
+            os.environ[k] = v
+
+    def _slots_restore(self, k2, *names):
+        os.environ["GPOOL_KAGGLE_API"] = self.kaggle.base
+        for n in ("GPOOL_KAGGLE_REG",) + names:
+            os.environ.pop(n, None)
+        k2.stop()
+
+    def test_orphan_notebooks_from_interrupted_jobs_are_cleaned(self):
+        """Il caso reale: sessioni GPU rimaste accese da lavori interrotti (telefono in pausa) bloccano i nuovi lavori."""
+        k2 = FakeKaggle(max_sessions=1).start()
+        self._slots_env(k2)
+        try:
+            k2.kernels[("tester", "gpool-vecchio")] = {"dir": self.out, "rc": None, "proc": None, "t0": 0, "body": {}}
+            (self.out / "reg.json").write_text(json.dumps([{"user": "tester", "slug": "gpool-vecchio", "boot": "esecuzione-precedente", "t": 1}]))
+            up = self.save("dati.txt", b"uno\ndue\n")
+            rec = UploadTest.__dict__["run_repo"](self, up["id"])
+            self.assertTrue(rec["ok"], rec)
+            self.assertNotIn(("tester", "gpool-vecchio"), k2.kernels, "il notebook orfano doveva essere cancellato")
+        finally:
+            self._slots_restore(k2)
+
+    def test_waits_when_both_gpu_slots_are_busy_then_goes(self):
+        k2 = FakeKaggle(max_sessions=1).start()
+        self._slots_env(k2, GPOOL_SLOT_WAIT_STEP="0.2", GPOOL_SLOT_WAIT_MAX="20")
+        try:
+            busy = {"dir": self.out, "rc": None, "proc": None, "t0": 0, "body": {}}
+            k2.kernels[("tester", "gpool-altro")] = busy           # sessione di un lavoro vero, non nostro: non si può cancellare
+            threading.Timer(1.0, lambda: busy.update(rc=0)).start()
+            up = self.save("dati.txt", b"uno\ndue\n")
+            rec = UploadTest.__dict__["run_repo"](self, up["id"])
+            self.assertTrue(rec["ok"], rec)
+        finally:
+            self._slots_restore(k2, "GPOOL_SLOT_WAIT_STEP", "GPOOL_SLOT_WAIT_MAX")
+
+    def test_gives_clear_message_when_slots_never_free_up(self):
+        k2 = FakeKaggle(max_sessions=1).start()
+        self._slots_env(k2, GPOOL_SLOT_WAIT_STEP="0.1", GPOOL_SLOT_WAIT_MAX="0.5")
+        try:
+            k2.kernels[("tester", "gpool-altro")] = {"dir": self.out, "rc": None, "proc": None, "t0": 0, "body": {}}
+            up = self.save("dati.txt", b"uno\ndue\n")
+            rec = UploadTest.__dict__["run_repo"](self, up["id"])
+            self.assertFalse(rec["ok"])
+            self.assertIn("2 sessioni GPU", rec["error"]); self.assertIn("kaggle.com/code", rec["error"])
+        finally:
+            self._slots_restore(k2, "GPOOL_SLOT_WAIT_STEP", "GPOOL_SLOT_WAIT_MAX")
+
     def test_silent_kaggle_failure_is_retried(self):
         """ERROR immediato senza registro (notebook mai partito): si riprova, poi riesce."""
         k2 = FakeKaggle(silent_fail_first=1).start()
