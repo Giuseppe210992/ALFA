@@ -4,6 +4,9 @@ from pathlib import Path
 LINGBOT_REPO = "https://github.com/Robbyant/lingbot-map"
 DA3_REPO = "https://github.com/ByteDance-Seed/Depth-Anything-3"
 DA3_RUNNER_NAME = "_gpool_da3_runner.py"
+SPLAT_REPO = "https://github.com/imcmurray/video-to-3dgs"        # progetto di riferimento (MIT); qui si usa il suo stesso flusso: COLMAP -> splat
+SPLAT_RUNNER_NAME = "_gpool_splat_runner.py"
+SPLAT_SETUP_NAME = "_gpool_splat_setup.sh"
 # fotogrammi massimi per modello sulla GPU gratuita di Kaggle (T4, ~15 GB); se la memoria finisce il programma dimezza da solo
 DA3_FRAMES = {"large": 80, "base": 120, "small": 160}
 RUNNER_NAME = "_gpool_lingbot_runner.py"
@@ -83,3 +86,23 @@ def da3_cfg(scene, opts):
     return {"setup": setup, "run": f"{prep_cmd} && {run_cmd}", "input_key": key,
             "files": {DA3_RUNNER_NAME: runner, PREP_NAME: prep},
             "title": "Depth Anything 3 (3D)", "gpu": True, "timeout_s": int(opts.get("timeout_s", 3600))}
+
+
+def splat_cfg(scene, opts):
+    """Config per Gaussian Splatting fotorealistico su Kaggle: COLMAP + nerfstudio (splatfacto), in un Python 3.10 isolato."""
+    adapters = Path(__file__).resolve().parent.parent / "adapters"
+    runner = (adapters / "splat_runner.py").read_text(encoding="utf-8")
+    setup_sh = (adapters / "splat_setup.sh").read_text(encoding="utf-8")
+    prep = (adapters / "lingbot_prep_images.py").read_text(encoding="utf-8")
+    key = "video" if scene.get("video") else "images"
+    frames = int(opts.get("max_frames", 80))
+    iters = int(opts.get("iters", 15000))
+    if not (8 <= frames <= 400) or not (1000 <= iters <= 60000):
+        raise ValueError("max_frames deve stare tra 8 e 400 e iters tra 1000 e 60000")
+    prep_cmd = f"python {PREP_NAME} {{{key}}} {FRAMES_DIR}"
+    prep_cmd += f" --fps {int(opts.get('fps', 3))} --max-frames {max(frames * 2, 120)}" if key == "video" else ""
+    run_cmd = f"python {SPLAT_RUNNER_NAME} --images {FRAMES_DIR} --out {{OUT}} --max-frames {frames} --iters {iters}"
+    return {"setup": [f"bash {SPLAT_SETUP_NAME}"], "run": f"{prep_cmd} && {run_cmd}", "input_key": key,
+            "files": {SPLAT_RUNNER_NAME: runner, SPLAT_SETUP_NAME: setup_sh, PREP_NAME: prep},
+            "title": "Gaussian Splatting (3D)", "gpu": True, "timeout_s": int(opts.get("timeout_s", 10800)),
+            "setup_timeout_s": 3600}

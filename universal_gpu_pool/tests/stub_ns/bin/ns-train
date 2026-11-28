@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+import os, sys
+a = sys.argv[1:]
+if os.environ.get("STUB_NS_OOM"):
+    sys.stderr.write("torch.OutOfMemoryError: CUDA out of memory\n"); sys.exit(1)
+out = a[a.index("--output-dir") + 1]
+d = os.path.join(out, "proc", "splatfacto", "2026-11-28_000000"); os.makedirs(d)
+open(os.path.join(d, "config.yml"), "w").write("x: 1\n")
+open(os.environ["STUB_NS_LOG"], "a").write("train %s\n" % " ".join(a))

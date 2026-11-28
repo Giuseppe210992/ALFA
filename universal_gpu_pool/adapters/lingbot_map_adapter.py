@@ -133,12 +133,12 @@ class LingBotMapAdapter(BaseAdapter):
     def _plan_kaggle(self, items, params):
         """runtime «kaggle»: stessa ricostruzione, ma eseguita su una GPU gratuita di Kaggle (nessun nodo del pool)."""
         from core import github_repo
-        from core.recipes import DA3_REPO, LINGBOT_REPO, da3_cfg, lingbot_cfg
+        from core.recipes import DA3_REPO, LINGBOT_REPO, SPLAT_REPO, da3_cfg, lingbot_cfg, splat_cfg
         opts = dict(params.get("options") or {})
         engine = opts.get("engine", "lingbot")
-        if engine not in ("lingbot", "da3"):
-            raise ValueError("engine deve essere 'lingbot' o 'da3'")
-        owner, repo, _ = github_repo.parse_url(DA3_REPO if engine == "da3" else LINGBOT_REPO)
+        if engine not in ("lingbot", "da3", "splat"):
+            raise ValueError("engine deve essere 'lingbot', 'da3' o 'splat'")
+        owner, repo, _ = github_repo.parse_url({"da3": DA3_REPO, "splat": SPLAT_REPO}.get(engine, LINGBOT_REPO))
         steps = []
         for i, it in enumerate(items):
             if isinstance(it, str):
@@ -161,11 +161,11 @@ class LingBotMapAdapter(BaseAdapter):
                     url = direct_url(url)[0]
                 except ValueError as e:
                     raise ValueError(str(e))
-            rc = (da3_cfg if engine == "da3" else lingbot_cfg)({key: url}, opts)
+            rc = {"da3": da3_cfg, "splat": splat_cfg}.get(engine, lingbot_cfg)({key: url}, opts)
             cfg = {"repo_url": f"https://github.com/{owner}/{repo}", "clone_url": github_repo.clone_url(owner, repo),
                    "ref": opts.get("repo_ref", ""), "setup": rc["setup"], "run": rc["run"], "values": {},
                    "downloads": ({} if up else {rc["input_key"]: url}), "outputs": [], "timeout_s": rc["timeout_s"],
-                   "setup_timeout_s": 2400, "gpu": True, "title": rc["title"], "files": rc["files"], "uploads": up}
+                   "setup_timeout_s": rc.get("setup_timeout_s", 2400), "gpu": True, "title": rc["title"], "files": rc["files"], "uploads": up}
             steps.append({"id": f"step_{i + 1:03d}", "depends_on": [], "payload": {"cfg": cfg}})
         if not steps:
             raise ValueError("indica un video o uno ZIP di foto")

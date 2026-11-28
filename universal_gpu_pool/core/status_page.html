@@ -413,6 +413,7 @@ details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
             <select id="d3-engine">
               <option value="lingbot" selected>LingBot-Map — collaudato, pensato per riprese lunghe</option>
               <option value="da3">Depth Anything 3 — novità, più veloce e ordinato (consigliato per stanze)</option>
+              <option value="splat">Gaussian Splatting — fotorealistico, LENTO (30-90 min), sperimentale</option>
             </select>
             <label for="d3-fps">Fotogrammi al secondo da usare (solo video)</label>
             <select id="d3-fps">
@@ -1753,7 +1754,7 @@ async function loadResults(jobId, silent) {
     if ((data.files || []).length) {
       const fbox = document.createElement('div');
       fbox.className = 'res';
-      fbox.innerHTML = '<b>File del risultato</b><div class="muted small" style="margin:4px 0 8px">Il file <code>.glb</code> si apre con Blender, MeshLab o un viewer web (es. gltf-viewer.donmccurdy.com: trascina il file nella pagina).</div><div class="row" id="filebtns"></div>';
+      fbox.innerHTML = '<b>File del risultato</b><div class="muted small" style="margin:4px 0 8px">Il file <code>.glb</code> si apre con Blender, MeshLab o un viewer web (es. gltf-viewer.donmccurdy.com: trascina il file nella pagina). Il file <code>scene_splat.ply</code> (Gaussian Splatting) si apre su <b>superspl.at/editor</b>.</div><div class="row" id="filebtns"></div>';
       data.files.forEach(f => {
         const b = document.createElement('button');
         b.className = 'btn ghost sm';

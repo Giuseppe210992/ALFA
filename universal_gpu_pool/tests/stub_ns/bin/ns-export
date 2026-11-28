@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+import os, sys
+a = sys.argv[1:]
+d = a[a.index("--output-dir") + 1]; os.makedirs(d, exist_ok=True)
+open(os.path.join(d, "splat.ply"), "wb").write(b"ply\n" + b"x" * 1000)
+open(os.environ["STUB_NS_LOG"], "a").write("export %s\n" % " ".join(a))
