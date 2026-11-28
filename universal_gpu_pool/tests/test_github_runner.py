@@ -929,6 +929,22 @@ class UploadTest(EnvCase):
             os.environ["GPOOL_KAGGLE_API"] = self.kaggle.base
             k2.stop()
 
+    def test_dataset_status_denied_still_works(self):
+        """Caso reale (telefono): il token crea il dataset ma non può leggerne lo stato (403 su GetDatasetStatus).
+        Non deve essere un errore: si attende e si riprova ad agganciare il dataset al notebook."""
+        k2 = FakeKaggle(deny_status=True, strict_ready=True, dataset_delay=1.0).start()
+        os.environ["GPOOL_KAGGLE_API"] = k2.base
+        os.environ["GPOOL_DATASET_WAIT"] = "0.3"
+        try:
+            up = self.save("dati.txt", b"uno\ndue\n")
+            rec = UploadTest.__dict__["run_repo"](self, up["id"])
+            self.assertTrue(rec["ok"], rec)
+            self.assertGreaterEqual(getattr(k2, "invalid_tries", 0), 1, "doveva riprovare almeno una volta")
+        finally:
+            os.environ["GPOOL_KAGGLE_API"] = self.kaggle.base
+            os.environ.pop("GPOOL_DATASET_WAIT", None)
+            k2.stop()
+
     def test_403_on_dataset_is_not_blamed_on_the_phone(self):
         """Il caso reale: 403 sulle chiamate dei dataset. Non va attribuito alla verifica del telefono."""
         k2 = FakeKaggle(deny_datasets=True).start()

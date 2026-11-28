@@ -20,8 +20,9 @@ USERS = {"good-token": "tester"}
 
 
 class FakeKaggle:
-    def __init__(self, no_phone=False, queue_s=0.3, page_size=4, timeout_kill=None, port=0, unzip=True, dataset_delay=0.3, deny_datasets=False):
+    def __init__(self, no_phone=False, queue_s=0.3, page_size=4, timeout_kill=None, port=0, unzip=True, dataset_delay=0.3, deny_datasets=False, deny_status=False, strict_ready=False):
         self.deny_datasets = deny_datasets
+        self.deny_status, self.strict_ready = deny_status, strict_ready
         self.no_phone, self.queue_s, self.page_size = no_phone, queue_s, page_size
         self.unzip, self.dataset_delay = unzip, dataset_delay        # unzip: Kaggle estrae gli ZIP dei dataset
         self.blobs, self.datasets, self.puts = {}, {}, []
@@ -113,6 +114,8 @@ class FakeKaggle:
                         fake.datasets[key] = {"files": files, "t0": time.time()}
                         return self._send(200, {"ref": f"{key[0]}/{key[1]}", "status": "ok", "url": "https://x"})
                     if method == "GetDatasetStatus":
+                        if fake.deny_status:
+                            return self._send(403, {"code": 403, "message": "Permission 'datasets.get' denied"})
                         d = fake.datasets.get(key)
                         if not d:
                             return self._send(404, {"code": 404, "message": "dataset not found"})
@@ -138,6 +141,12 @@ class FakeKaggle:
                     user, _, slug = body["slug"].partition("/")
                     assert user == USERS[token], f"slug utente sbagliato: {body['slug']}"
                     assert slug == "-".join(body["newTitle"].lower().split()), "lo slug deve derivare dal titolo"
+                    if fake.strict_ready:                  # come Kaggle vero: dataset non ancora pronto -> sorgente non valida
+                        for ref in body.get("datasetDataSources") or []:
+                            ds0 = fake.datasets.get(tuple(ref.split("/", 1)))
+                            if not ds0 or time.time() - ds0["t0"] < fake.dataset_delay:
+                                fake.invalid_tries = getattr(fake, "invalid_tries", 0) + 1
+                                return self._send(200, {"invalidDatasetSources": [ref]})
                     d = fake.root / slug
                     shutil.rmtree(d, ignore_errors=True)
                     (d / "working").mkdir(parents=True)

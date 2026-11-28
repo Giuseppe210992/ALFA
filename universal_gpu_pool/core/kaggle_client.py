@@ -48,6 +48,14 @@ def slugify(title):
     return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", title.lower())).strip("-")
 
 
+def _dataset_wait():
+    """Secondi di attesa tra un tentativo e l'altro quando lo stato del dataset non è leggibile (i test lo accorciano)."""
+    try:
+        return float(os.environ.get("GPOOL_DATASET_WAIT", "10"))
+    except ValueError:
+        return 10.0
+
+
 class KaggleClient:
     def __init__(self, token=None, username=None, key=None, base=None):
         self.token, self.username, self.key = (token or "").strip(), (username or "").strip(), (key or "").strip()
@@ -164,7 +172,12 @@ class KaggleClient:
         t0 = time.time()
         try:
             return self._wait_dataset(user, slug, t0, timeout_s, poll)
-        except KaggleError:
+        except KaggleError as e:
+            if e.code == 403 and e.method == "GetDatasetStatus":
+                # Il token può creare dataset ma non leggerne lo stato: non è un errore. Si aspetta un po' e
+                # push_script riprova finché Kaggle non considera il dataset pronto.
+                time.sleep(_dataset_wait())
+                return user, slug
             self.delete_dataset(user, slug)          # niente dataset «orfani» nel tuo account
             raise
 
@@ -196,6 +209,11 @@ class KaggleClient:
         if datasets:
             payload["datasetDataSources"] = list(datasets)
         r = self.call(KERNELS, "SaveKernel", payload, timeout=120)
+        for _ in range(15 if datasets else 0):           # dataset appena creato e non ancora pronto: si riprova
+            if not r.get("invalidDatasetSources"):
+                break
+            time.sleep(_dataset_wait())
+            r = self.call(KERNELS, "SaveKernel", payload, timeout=120)
         if r.get("error"):
             raise KaggleError("Kaggle ha rifiutato lo script: " + str(r["error"]))
         for k in ("invalidDatasetSources", "invalidKernelSources", "invalidModelSources"):
