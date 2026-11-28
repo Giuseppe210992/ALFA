@@ -409,6 +409,11 @@ details.tech summary{cursor:pointer;color:var(--mut);font-size:.85rem}
             <div class="drop" id="d3-drop"></div>
             <label for="d3-url" style="margin-top:12px">…oppure incolla un link</label>
             <input id="d3-url" type="text" placeholder="Link (Google Drive, Dropbox, …)">
+            <label for="d3-engine">Motore 3D</label>
+            <select id="d3-engine">
+              <option value="lingbot" selected>LingBot-Map — collaudato, pensato per riprese lunghe</option>
+              <option value="da3">Depth Anything 3 — novità, più veloce e ordinato (consigliato per stanze)</option>
+            </select>
             <label for="d3-fps">Fotogrammi al secondo da usare (solo video)</label>
             <select id="d3-fps">
               <option value="5">5 — veloce</option>
@@ -1502,7 +1507,7 @@ function buildPayload() {
     return {
       adapter: 'lingbot_map',
       items: [{ id: 'scena', [kind]: url }],
-      params: { runtime: 'kaggle', title: '3D: ' + (kind === 'video' ? 'video' : 'foto'), options: { fps: +$('#d3-fps').value } }
+      params: { runtime: 'kaggle', title: '3D: ' + (kind === 'video' ? 'video' : 'foto'), options: { fps: +$('#d3-fps').value, engine: $('#d3-engine').value } }
     };
   }
   if (mode === 'chat') {

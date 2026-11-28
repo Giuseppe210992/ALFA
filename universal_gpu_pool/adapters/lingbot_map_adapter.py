@@ -133,9 +133,12 @@ class LingBotMapAdapter(BaseAdapter):
     def _plan_kaggle(self, items, params):
         """runtime «kaggle»: stessa ricostruzione, ma eseguita su una GPU gratuita di Kaggle (nessun nodo del pool)."""
         from core import github_repo
-        from core.recipes import LINGBOT_REPO, lingbot_cfg
+        from core.recipes import DA3_REPO, LINGBOT_REPO, da3_cfg, lingbot_cfg
         opts = dict(params.get("options") or {})
-        owner, repo, _ = github_repo.parse_url(LINGBOT_REPO)
+        engine = opts.get("engine", "lingbot")
+        if engine not in ("lingbot", "da3"):
+            raise ValueError("engine deve essere 'lingbot' o 'da3'")
+        owner, repo, _ = github_repo.parse_url(DA3_REPO if engine == "da3" else LINGBOT_REPO)
         steps = []
         for i, it in enumerate(items):
             if isinstance(it, str):
@@ -158,7 +161,7 @@ class LingBotMapAdapter(BaseAdapter):
                     url = direct_url(url)[0]
                 except ValueError as e:
                     raise ValueError(str(e))
-            rc = lingbot_cfg({key: url}, opts)
+            rc = (da3_cfg if engine == "da3" else lingbot_cfg)({key: url}, opts)
             cfg = {"repo_url": f"https://github.com/{owner}/{repo}", "clone_url": github_repo.clone_url(owner, repo),
                    "ref": opts.get("repo_ref", ""), "setup": rc["setup"], "run": rc["run"], "values": {},
                    "downloads": ({} if up else {rc["input_key"]: url}), "outputs": [], "timeout_s": rc["timeout_s"],

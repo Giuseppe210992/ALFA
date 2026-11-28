@@ -2,6 +2,10 @@
 from pathlib import Path
 
 LINGBOT_REPO = "https://github.com/Robbyant/lingbot-map"
+DA3_REPO = "https://github.com/ByteDance-Seed/Depth-Anything-3"
+DA3_RUNNER_NAME = "_gpool_da3_runner.py"
+# fotogrammi massimi per modello sulla GPU gratuita di Kaggle (T4, ~15 GB); se la memoria finisce il programma dimezza da solo
+DA3_FRAMES = {"large": 80, "base": 120, "small": 160}
 RUNNER_NAME = "_gpool_lingbot_runner.py"
 PREP_NAME = "_gpool_prep_images.py"
 FRAMES_DIR = "/tmp/gpool_frames"
@@ -54,3 +58,28 @@ def lingbot_cfg(scene, opts):
     run = first if opts.get("no_fallback") else f"({first}) || ({second})"
     return {"setup": setup, "run": run, "input_key": key, "files": {RUNNER_NAME: runner, PREP_NAME: prep},
             "title": "LingBot-Map (3D)", "gpu": True, "timeout_s": int(opts.get("timeout_s", 7200))}
+
+
+def da3_cfg(scene, opts):
+    """Config per l'adapter github_repo che esegue Depth Anything 3 su Kaggle (più veloce di LingBot-Map, ottimo per stanze/oggetti)."""
+    adapters = Path(__file__).resolve().parent.parent / "adapters"
+    runner = (adapters / "da3_runner.py").read_text(encoding="utf-8")
+    prep = (adapters / "lingbot_prep_images.py").read_text(encoding="utf-8")
+    key = "video" if scene.get("video") else "images"
+    model = opts.get("da3_model", "large")
+    if model not in DA3_FRAMES:
+        raise ValueError("da3_model deve essere uno tra: " + ", ".join(sorted(DA3_FRAMES)))
+    frames = int(opts.get("max_frames", DA3_FRAMES[model]))
+    # Il pacchetto non si installa (richiede la cronologia git): si usa src/ direttamente. Le librerie si installano una a una:
+    # se una non ha una versione per questo Python non si ferma tutto (il programma ha comunque dei segnaposto).
+    setup = opts.get("setup")
+    if setup is None:
+        setup = ["for p in einops omegaconf safetensors huggingface_hub trimesh imageio opencv-python-headless pillow_heif plyfile; "
+                 "do pip install -q $p || true; done"]
+    prep_cmd = f"python {PREP_NAME} {{{key}}} {FRAMES_DIR}"
+    prep_cmd += f" --fps {int(opts.get('fps', 5))} --max-frames {max(frames * 2, 120)}" if key == "video" else ""
+    run_cmd = (f"python {DA3_RUNNER_NAME} --repo . --images {FRAMES_DIR} --out {{OUT}} --model {model} --max-frames {frames} "
+               f"--conf-percentile {float(opts.get('conf_percentile', 40))}")
+    return {"setup": setup, "run": f"{prep_cmd} && {run_cmd}", "input_key": key,
+            "files": {DA3_RUNNER_NAME: runner, PREP_NAME: prep},
+            "title": "Depth Anything 3 (3D)", "gpu": True, "timeout_s": int(opts.get("timeout_s", 3600))}
