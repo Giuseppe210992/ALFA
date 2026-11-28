@@ -246,6 +246,24 @@ class SystemTest(unittest.TestCase):
         row = [j for j in allst["jobs"] if j["id"] == r["job_id"]][0]
         self.assertIn("KeyError", row["error"]); self.assertGreaterEqual(row["attempts"], 1)
 
+    def test_083_step_note_reaches_job_list(self):
+        """La frase «cosa sta facendo» arriva dal worker (heartbeat) fino alla lista dei lavori."""
+        code, r = self.call("POST", "/jobs/plan", {"adapter": "demo", "items": [], "params": {"n_steps": 1, "step_seconds": 0.1}})
+        jid = r["job_id"]
+        with self.router.lock:
+            st = list(self.router.jobs[jid]["steps"].values())[0]
+            st.update(status="running", worker="w_x")
+            self.router.workers["w_x"] = {"profile": {}, "name": "x", "last_seen": time.time(), "status": "online",
+                                          "session_start": time.time()}
+        self.assertTrue(self.router.heartbeat({"worker_id": "w_x", "job_id": jid, "step_id": st["id"], "progress": 0.3,
+                                               "note": "In attesa di una GPU libera su Kaggle"}))
+        code, allst = self.call("GET", "/status")
+        row = [j for j in allst["jobs"] if j["id"] == jid][0]
+        self.assertIn("GPU libera", row["note"])
+        with self.router.lock:
+            st.update(status="completed")
+            self.router.workers.pop("w_x", None)
+
     def test_084_local_api_worker_gets_long_lease(self):
         """Il worker locale (stesso programma del server) non va dichiarato «caduto» per una pausa breve del telefono."""
         local = [wid for wid, w in self.router.workers.items() if w["profile"].get("api_only") and w["status"] == "online"]

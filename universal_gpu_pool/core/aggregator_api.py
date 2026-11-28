@@ -246,6 +246,7 @@ class Router:
                 st = self.jobs[jid]["steps"][sid]
                 if st["status"] == "running" and st["worker"] == body["worker_id"]:
                     st["progress"] = body.get("progress", 0.0)
+                    st["note"] = str(body.get("note") or "")[:200]
                     age = (time.time() - w["session_start"]) / self.cfg["session_limit_s"]
                     thr = self.cfg["handoff_threshold"]
                     if not st["handoff_triggered"] and (st["progress"] >= thr or age >= thr):
@@ -418,7 +419,8 @@ class Router:
                 # motivo dell'ultimo errore (anche di un passo rimesso in coda): si vede subito nella lista dei lavori
                 errs = [str(s.get("error")) for s in j["steps"].values()
                         if s.get("error") and s["status"] != "completed" and (s["status"] == "failed" or s.get("attempts"))]
-                jobs.append({"id": jid, "error": (errs[0][:400] if errs else ""), "attempts": max(
+                notes = [s.get("note") for s in j["steps"].values() if s["status"] == "running" and s.get("note")]
+                jobs.append({"id": jid, "note": (notes[0] if notes else ""), "error": (errs[0][:400] if errs else ""), "attempts": max(
                                  [int(s.get("attempts") or 0) for s in j["steps"].values()] or [0]),
                              "id_": jid, "status": j["status"], "adapter": j["manifest"].get("adapter"),
                              "runtime": params.get("runtime"), "title": params.get("title"),

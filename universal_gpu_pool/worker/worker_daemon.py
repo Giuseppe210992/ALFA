@@ -105,7 +105,8 @@ class Worker:
         try:
             adapter = get_adapter(task["adapter"])()
             tmp = self.store.tmp_dir(jid, sid, self.wid)
-            ctx = StepContext(self.store, jid, step, task["params"], tmp, progress, self.name, self.cache)
+            ctx = StepContext(self.store, jid, step, task["params"], tmp, progress, self.name, self.cache,
+                              note=lambda text: self.cur.__setitem__("note", str(text)[:200]))
             if task["mode"] == "prefetch":
                 self.say(f"prefetch {sid}")
                 adapter.prefetch(ctx)

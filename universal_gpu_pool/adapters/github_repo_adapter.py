@@ -87,6 +87,8 @@ class GitHubRepoAdapter(BaseAdapter):
     def _push(client, title, text, cfg, datasets, ctx):
         """Lancia il notebook. Kaggle concede 2 sessioni GPU alla volta: prima si liberano quelle orfane (lavori interrotti),
         poi, se sono ancora tutte occupate, si attende che se ne liberi una."""
+        note = getattr(ctx, "note", None) or (lambda t: None)
+        note("Preparo il notebook su Kaggle…")
         removed = client.cleanup_orphans()
         if removed:
             print(f"[github_repo] fermati {removed} notebook rimasti accesi da lavori interrotti", flush=True)
@@ -106,6 +108,8 @@ class GitHubRepoAdapter(BaseAdapter):
                                       "poi «Your Work» → «Sessions» e ferma quelle che non ti servono; poi riprova.") from None
                 step = float(os.environ.get("GPOOL_SLOT_WAIT_STEP", "30"))
                 print(f"[github_repo] 2 sessioni GPU già in uso su Kaggle: attendo che se ne liberi una ({int(waited)} s)", flush=True)
+                note(f"In attesa di una GPU libera su Kaggle (hai già 2 sessioni in corso; attesa {int(waited // 60)} min). "
+                     "Puoi fermarne una su kaggle.com/code → Your Work → Sessions.")
                 time.sleep(step)
                 waited += step
 
@@ -123,6 +127,7 @@ class GitHubRepoAdapter(BaseAdapter):
             ctx.progress(0.02)
             datasets = []
             if cfg.get("uploads"):
+                getattr(ctx, "note", lambda t: None)("Carico i tuoi file su Kaggle…")
                 ds_user, ds_slug = self._upload_inputs(client, cfg, ctx)
                 datasets = [f"{ds_user}/{ds_slug}"]
             script_cfg = dict(cfg, uploads={k: v["name"] for k, v in (cfg.get("uploads") or {}).items()})
@@ -144,10 +149,12 @@ class GitHubRepoAdapter(BaseAdapter):
                 t_push = time.time()
                 user, slug = self._push(client, title, build_script(script_cfg), cfg, datasets, ctx)
                 print(f"[github_repo] notebook Kaggle: {user}/{slug}", flush=True)
+                getattr(ctx, "note", lambda t: None)("Notebook avviato su Kaggle: sta lavorando (di solito 5-15 minuti)")
                 ctx.progress(0.08)
                 ctx.progress(0.1)
                 st, msg = client.wait(user, slug, budget, on_tick=tick, poll=float(opts.get("poll_s", 10)))
                 ctx.progress(0.92)
+                getattr(ctx, "note", lambda t: None)("Scarico i risultati da Kaggle…")
                 files, klog = client.list_output(user, slug)
                 # Errore immediato e senza alcun registro: il notebook non è nemmeno partito (spesso il dataset appena
                 # creato non è ancora montabile). Si riprova invece di arrendersi.

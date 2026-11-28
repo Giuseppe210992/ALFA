@@ -13,6 +13,7 @@ class StepContext:
     progress: Callable[[float], None]
     worker_name: str = ""
     models_cache: Path = None
+    note: Callable[[str], None] = lambda text: None      # frase breve su cosa sta facendo il lavoro (si vede nella lista)
 
 
 class BaseAdapter:

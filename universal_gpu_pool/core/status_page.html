@@ -1634,6 +1634,7 @@ async function tick() {
             ${tagFor(j)}
           </div>
           <div class="muted small" style="margin-top:4px">${escapeHtml(j.id)} · ${escapeHtml(j.adapter || '')} · ${j.done}/${j.total} passi${items}${j.created ? ' · ' + ago(j.created) : ''}</div>
+          ${j.note && j.status === 'running' ? `<div class="small" style="margin-top:6px;color:var(--acc);word-break:break-word">⏳ ${escapeHtml(j.note)}</div>` : ''}
           ${j.error && j.status !== 'completed' ? `<div class="small" style="margin-top:6px;color:var(--bad);word-break:break-word">${j.attempts ? 'Tentativo ' + j.attempts + ' · ' : ''}${escapeHtml(j.error)}</div>` : ''}
           <div class="bar"><i style="width:${pct}%"></i></div>`;
         div.onclick = () => { selJob = j.id; loadResults(j.id); $$('#jobs .job').forEach(x => x.classList.remove('sel')); div.classList.add('sel'); };
