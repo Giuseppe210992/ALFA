@@ -371,5 +371,22 @@ class RealRepoTest(unittest.TestCase):
         self.assertTrue((out / "predictions.npz").exists())
 
 
+class RecipeMemoryTest(unittest.TestCase):
+    def test_recipe_has_light_fallback_for_small_gpus(self):
+        from core.recipes import lingbot_cfg
+        cfg = lingbot_cfg({"video": "x"}, {})
+        run = cfg["run"]
+        self.assertIn(") || (", run)                                   # secondo tentativo automatico se la GPU finisce la memoria
+        first, second = run.split(") || (")
+        self.assertIn("--keyframe_interval 4", first); self.assertIn("--max-frames 150", first)
+        self.assertIn("--keyframe_interval 8", second); self.assertIn("--num_scale_frames 2", second)
+        self.assertIn("--max-frames 60", second)
+        self.assertIn("expandable_segments:True", first)
+        self.assertEqual(cfg["input_key"], "video")
+        self.assertNotIn(") || (", lingbot_cfg({"video": "x"}, {"no_fallback": True})["run"])
+        user = lingbot_cfg({"video": "x"}, {"keyframe_interval": 2})["run"]   # la scelta dell'utente vince
+        self.assertEqual(user.count("--keyframe_interval 2"), 2)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -25,19 +25,32 @@ def lingbot_cfg(scene, opts):
     setup = opts.get("setup")
     if setup is None:
         setup = ["pip install -q -e . trimesh matplotlib"] + weights
-    parts = ["python", RUNNER_NAME, "--repo", ".", "--out", "{OUT}", "--glb-percent", str(float(opts.get("glb_percent", 50))),
-             "--", "--model_path", model, "--mode", opts.get("mode", "streaming")]
-    parts += ["--image_folder", FRAMES_DIR]
-    for k, flag in (("stride", "--stride"), ("first_k", "--first_k"), ("keyframe_interval", "--keyframe_interval"),
-                    ("num_scale_frames", "--num_scale_frames"), ("camera_num_iterations", "--camera_num_iterations"),
-                    ("window_size", "--window_size"), ("overlap_keyframes", "--overlap_keyframes")):
-        if opts.get(k) is not None:
-            parts += [flag, str(int(opts[k]))]
-    parts += ["--use_sdpa", "--offload_to_cpu"]       # FlashInfer non è installato su Kaggle: attenzione SDPA
-    run = " ".join(parts)
-    # Prima si preparano foto o video: il demo ufficiale accetta pochi formati, non guarda nelle sottocartelle e si fida
-    # dei metadati dei video (che nei video registrati dal browser sono spesso sbagliati). Si passa sempre da una cartella di fotogrammi.
-    extra = f" --fps {int(opts.get('fps', 10))}" if key == "video" else ""
-    run = f"python {PREP_NAME} {{{key}}} {FRAMES_DIR}{extra} && {run}"
+    def command(extra_opts, fps, max_frames):
+        parts = ["python", RUNNER_NAME, "--repo", ".", "--out", "{OUT}", "--glb-percent", str(float(opts.get("glb_percent", 50))),
+                 "--", "--model_path", model, "--mode", opts.get("mode", "streaming")]
+        parts += ["--image_folder", FRAMES_DIR]
+        merged = dict(extra_opts)
+        merged.update({k: v for k, v in opts.items() if v is not None})       # le scelte dell'utente vincono
+        for k, flag in (("stride", "--stride"), ("first_k", "--first_k"), ("keyframe_interval", "--keyframe_interval"),
+                        ("num_scale_frames", "--num_scale_frames"), ("camera_num_iterations", "--camera_num_iterations"),
+                        ("window_size", "--window_size"), ("overlap_keyframes", "--overlap_keyframes")):
+            if merged.get(k) is not None:
+                parts += [flag, str(int(merged[k]))]
+        parts += ["--use_sdpa", "--offload_to_cpu"]       # FlashInfer non è installato su Kaggle: attenzione SDPA
+        # Prima si preparano foto o video: il demo ufficiale accetta pochi formati, non guarda nelle sottocartelle e si fida
+        # dei metadati dei video (che nei video registrati dal browser sono spesso sbagliati). Si passa sempre da una cartella di fotogrammi.
+        prep = f"python {PREP_NAME} {{{key}}} {FRAMES_DIR}"
+        if key == "video":
+            prep += f" --fps {fps} --max-frames {max_frames}"
+        else:
+            prep += f" --max-frames {max_frames}"
+        return f"{prep} && PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True " + " ".join(parts)
+
+    # La GPU gratuita di Kaggle (T4) ha ~15 GB: la memoria cresce con i fotogrammi. Primo tentativo moderato; se la memoria
+    # finisce, secondo tentativo più leggero (meno fotogrammi, keyframe più radi) senza che l'utente debba fare nulla.
+    fps = int(opts.get("fps", 5))
+    first = command({"keyframe_interval": 4}, fps, int(opts.get("max_frames", 150)))
+    second = command({"keyframe_interval": 8, "num_scale_frames": 2}, min(fps, 3), 60)
+    run = first if opts.get("no_fallback") else f"({first}) || ({second})"
     return {"setup": setup, "run": run, "input_key": key, "files": {RUNNER_NAME: runner, PREP_NAME: prep},
             "title": "LingBot-Map (3D)", "gpu": True, "timeout_s": int(opts.get("timeout_s", 7200))}

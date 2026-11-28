@@ -729,7 +729,7 @@ class LingBotOnKaggleTest(EnvCase):
         st = ad.plan([{"video": "https://drive.google.com/file/d/ABCDEFGHIJK12/view"}], {"runtime": "kaggle"}, {})
         cfg = st[0]["payload"]["cfg"]
         self.assertIn("drive.usercontent.google.com/download?id=ABCDEFGHIJK12", cfg["downloads"]["video"])
-        self.assertIn("_gpool_prep_images.py {video} /tmp/gpool_frames --fps 10", cfg["run"])
+        self.assertIn("_gpool_prep_images.py {video} /tmp/gpool_frames --fps 5 --max-frames 150", cfg["run"])
         self.assertNotIn("--video_path", cfg["run"], "anche i video passano dalla preparazione dei fotogrammi")
         self.assertIn("--image_folder /tmp/gpool_frames", cfg["run"]); self.assertIn("--use_sdpa", cfg["run"])
         self.assertIn("pip install -q -e .", cfg["setup"][0]); self.assertIn("hf_hub_download", cfg["setup"][1])
