@@ -410,7 +410,12 @@ class Router:
                 prog = sum(1.0 if s["status"] == "completed" else float(s.get("progress") or 0)
                            if s["status"] == "running" else 0.0 for s in j["steps"].values())
                 params = j["manifest"].get("params") or {}
-                jobs.append({"id": jid, "status": j["status"], "adapter": j["manifest"].get("adapter"),
+                # motivo dell'ultimo errore (anche di un passo rimesso in coda): si vede subito nella lista dei lavori
+                errs = [str(s.get("error")) for s in j["steps"].values()
+                        if s.get("error") and s["status"] != "completed" and (s["status"] == "failed" or s.get("attempts"))]
+                jobs.append({"id": jid, "error": (errs[0][:400] if errs else ""), "attempts": max(
+                                 [int(s.get("attempts") or 0) for s in j["steps"].values()] or [0]),
+                             "id_": jid, "status": j["status"], "adapter": j["manifest"].get("adapter"),
                              "runtime": params.get("runtime"), "title": params.get("title"),
                              "created": j["manifest"].get("created"),
                              "total": len(j["steps"]), "done": c["completed"], "running": c["running"],

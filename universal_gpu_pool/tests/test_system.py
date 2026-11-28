@@ -242,6 +242,9 @@ class SystemTest(unittest.TestCase):
         code, res = self.call("GET", f"/jobs/{r['job_id']}/results")
         self.assertTrue(any("KeyError" in e for e in res["errors"]), res["errors"])
         self.assertTrue(any("dipendenza fallita" in e for e in res["errors"]), res["errors"])
+        code, allst = self.call("GET", "/status")                        # il motivo si vede già nella lista dei lavori
+        row = [j for j in allst["jobs"] if j["id"] == r["job_id"]][0]
+        self.assertIn("KeyError", row["error"]); self.assertGreaterEqual(row["attempts"], 1)
 
     def test_085_gpu_jobs_wait_for_gpu_node(self):
         code, r = self.call("POST", "/jobs/plan", {"adapter": "demo", "items": [],
