@@ -1773,8 +1773,14 @@ async function loadResults(jobId, silent) {
 async function downloadFile(jobId, f, btn) {
   const old = btn.textContent; btn.disabled = true; btn.textContent = 'Scarico…';
   try {
-    const r = await fetch('/jobs/' + encodeURIComponent(jobId) + '/download?step=' + encodeURIComponent(f.step) +
-      '&name=' + encodeURIComponent(f.name), { headers: { 'X-Pool-Token': tok } });
+    const dlPath = '/jobs/' + encodeURIComponent(jobId) + '/download?step=' + encodeURIComponent(f.step) +
+      '&name=' + encodeURIComponent(f.name);
+    if (window.AndroidBridge) {           // app Android: i download «blob» non funzionano, li salva l'app nella cartella Download
+      window.AndroidBridge.download(dlPath, f.name.split('/').pop(), tok);
+      toast('Salvataggio in corso nella cartella Download…', 4000);
+      return;
+    }
+    const r = await fetch(dlPath, { headers: { 'X-Pool-Token': tok } });
     if (!r.ok) throw new Error('errore ' + r.status);
     const blob = await r.blob();
     const a = document.createElement('a');
@@ -1787,6 +1793,7 @@ async function downloadFile(jobId, f, btn) {
 }
 
 function download(name, text, type) {
+  if (window.AndroidBridge) { window.AndroidBridge.saveText(name, text, type); return; }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type }));
   a.download = name;

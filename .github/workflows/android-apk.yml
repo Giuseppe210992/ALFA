@@ -1,0 +1,57 @@
+name: Costruisci l'app Android (APK)
+
+on:
+  push:
+    branches: [claude/new-session-q8o2nc]
+    paths: ['android/**', 'universal_gpu_pool/**', '.github/workflows/android-apk.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Metti il programma Python dentro l'app
+        run: |
+          mkdir -p android/app/src/main/assets/gpool
+          rsync -a \
+            --exclude tests --exclude deploy --exclude tools --exclude __pycache__ \
+            --exclude gpu_pool_store --exclude 'e2e*' --exclude '*.bat' --exclude '*.command' \
+            --exclude 'secrets.env' --exclude 'local_config.yaml' --exclude '.git' \
+            universal_gpu_pool/ android/app/src/main/assets/gpool/
+          du -sh android/app/src/main/assets/gpool
+
+      - name: Accetta le licenze Android
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - name: Compila l'APK
+        run: gradle -p android assembleDebug -Pvc=${{ github.run_number }} --stacktrace
+
+      - name: Pubblica l'APK (link fisso)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk GPU-Pool.apk
+          gh release delete apk-latest --cleanup-tag -y || true
+          gh release create apk-latest GPU-Pool.apk \
+            --title "GPU Pool per Android (build ${{ github.run_number }})" \
+            --notes "Scarica GPU-Pool.apk dal telefono e aprilo per installare l'app." \
+            --target "${{ github.sha }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GPU-Pool-apk
+          path: GPU-Pool.apk
